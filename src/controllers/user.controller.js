@@ -9,131 +9,113 @@ import {
   requireFields,
 } from '../middlewares/validate.middleware.js';
 
-const USER_ROLES = ['user', 'admin'];
-const USER_STATUSES = ['active', 'suspended', 'closed'];
+const ROLES_USUARIO = ['user', 'admin'];
+const ESTADOS_USUARIO = ['active', 'suspended', 'closed'];
 
-function sanitizeContactForRequester(user, requester, unlockedPartnerIds) {
-  const isAdmin = requester?.role === 'admin';
-  const isSelf = requester && Number(requester.id) === Number(user.id);
-  const isUnlockedPartner = unlockedPartnerIds?.has(Number(user.id));
+// Oculta email y teléfono si el usuario no tiene relación finalizada o rol admin (RN05)
+function sanitizeContactForRequester(usuario, solicitante, idsSociosLiberados) {
+  const esAdmin = solicitante?.role === 'admin';
+  const esPropioPerfil = solicitante && Number(solicitante.id) === Number(usuario.id);
+  const estaLiberado = idsSociosLiberados?.has(Number(usuario.id));
 
-  if (isAdmin || isSelf || isUnlockedPartner) {
-    return user;
-  }
+  if (esAdmin || esPropioPerfil || estaLiberado) return usuario;
 
-  // RN05: Ocultar datos de contacto directo salvo relación finalizada o rol admin
   return {
-    ...user,
+    ...usuario,
     email: null,
     phone: null,
     contactLocked: true,
   };
 }
 
+// Controlador CRUD de Usuarios y Perfiles
 export function createUserController(deps = {}) {
   const users = deps.userModel || userModel;
   const hashFn = deps.hash || bcrypt.hash;
 
-  const listUsers = asyncHandler(async (req, res) => {
-    const { role, status, search } = req.query;
-    if (role) assertEnumValue(role, USER_ROLES, 'role');
-    if (status) assertEnumValue(status, USER_STATUSES, 'status');
+  // GET /api/usuarios - Listar usuarios del padrón
+  const listUsers = asyncHandler(async (peticion, respuesta) => {
+    const { role, status, search } = peticion.query;
+    if (role) assertEnumValue(role, ROLES_USUARIO, 'role');
+    if (status) assertEnumValue(status, ESTADOS_USUARIO, 'status');
 
-    const rows = await users.findAll({ role, status, search });
-    const unlockedPartnerIds =
-      req.user.role === 'admin'
-        ? null
-        : await users.getFinalizedPartnerIds(req.user.id);
+    const filas = await users.findAll({ role, status, search });
+    const idsSociosLiberados =
+      peticion.user.role === 'admin' ? null : await users.getFinalizedPartnerIds(peticion.user.id);
 
-    const result = rows.map((u) =>
-      sanitizeContactForRequester(u, req.user, unlockedPartnerIds)
-    );
-    res.status(200).json(result);
+    respuesta.status(200).json(filas.map((u) => sanitizeContactForRequester(u, peticion.user, idsSociosLiberados)));
   });
 
-  const getUserById = asyncHandler(async (req, res) => {
-    const targetId = parsePositiveId(req.params.id);
-    const user = await users.findById(targetId);
-    if (!user) {
-      throw new AppError(404, 'Usuario no encontrado.');
-    }
+  // GET /api/usuarios/:id - Obtener detalle de un usuario
+  const getUserById = asyncHandler(async (peticion, respuesta) => {
+    const idObjetivo = parsePositiveId(peticion.params.id);
+    const usuario = await users.findById(idObjetivo);
+    if (!usuario) throw new AppError(404, 'Usuario no encontrado.');
 
-    const unlockedPartnerIds =
-      req.user.role === 'admin'
-        ? null
-        : await users.getFinalizedPartnerIds(req.user.id);
+    const idsSociosLiberados =
+      peticion.user.role === 'admin' ? null : await users.getFinalizedPartnerIds(peticion.user.id);
 
-    res
-      .status(200)
-      .json(sanitizeContactForRequester(user, req.user, unlockedPartnerIds));
+    respuesta.status(200).json(sanitizeContactForRequester(usuario, peticion.user, idsSociosLiberados));
   });
 
-  const createUser = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['name', 'email', 'password']);
+  // POST /api/usuarios - Crear usuario (Solo Administrador)
+  const createUser = asyncHandler(async (peticion, respuesta) => {
+    requireFields(peticion.body, ['name', 'email', 'password']);
 
-    const name = String(req.body.name).trim();
-    const email = String(req.body.email).trim().toLowerCase();
-    const password = String(req.body.password);
-    const phone = req.body.phone ? String(req.body.phone).trim() : '';
-    const city = req.body.city ? String(req.body.city).trim() : '';
-    const role = req.body.role || 'user';
-    const status = req.body.status || 'active';
-    const reputation =
-      req.body.reputation !== undefined ? Number(req.body.reputation) : 5.0;
+    const nombre = String(peticion.body.name).trim();
+    const correo = String(peticion.body.email).trim().toLowerCase();
+    const contrasena = String(peticion.body.password);
+    const telefono = peticion.body.phone ? String(peticion.body.phone).trim() : '';
+    const ciudad = peticion.body.city ? String(peticion.body.city).trim() : '';
+    const rol = peticion.body.role || 'user';
+    const estado = peticion.body.status || 'active';
+    const reputacion = peticion.body.reputation !== undefined ? Number(peticion.body.reputation) : 5.0;
 
-    if (name.length < 2) {
-      throw new AppError(400, 'El nombre debe tener al menos 2 caracteres.');
-    }
-    if (!isValidEmail(email)) {
-      throw new AppError(400, 'El correo electrónico no es válido.');
-    }
-    if (password.length < 6) {
-      throw new AppError(400, 'La contraseña debe tener al menos 6 caracteres.');
-    }
-    assertEnumValue(role, USER_ROLES, 'role');
-    assertEnumValue(status, USER_STATUSES, 'status');
-    if (!Number.isFinite(reputation) || reputation < 1 || reputation > 5) {
+    if (nombre.length < 2) throw new AppError(400, 'El nombre debe tener al menos 2 caracteres.');
+    if (!isValidEmail(correo)) throw new AppError(400, 'El correo electrónico no es válido.');
+    if (contrasena.length < 6) throw new AppError(400, 'La contraseña debe tener al menos 6 caracteres.');
+    assertEnumValue(rol, ROLES_USUARIO, 'role');
+    assertEnumValue(estado, ESTADOS_USUARIO, 'status');
+    if (!Number.isFinite(reputacion) || reputacion < 1 || reputacion > 5) {
       throw new AppError(400, 'La reputación debe ubicarse entre 1.00 y 5.00.');
     }
 
-    if (await users.existsByEmail(email)) {
+    if (await users.existsByEmail(correo)) {
       throw new AppError(409, 'Ya existe un usuario registrado con ese correo.');
     }
 
-    const passwordHash = await hashFn(password, env.bcryptSaltRounds);
-    const created = await users.create({
-      name,
-      email,
-      passwordHash,
-      role,
-      phone,
-      city,
-      status,
-      reputation,
+    const contrasenaHash = await hashFn(contrasena, env.bcryptSaltRounds);
+    const usuarioCreado = await users.create({
+      name: nombre,
+      email: correo,
+      passwordHash: contrasenaHash,
+      role: rol,
+      phone: telefono,
+      city: ciudad,
+      status: estado,
+      reputation: reputacion,
     });
-    res.status(201).json(created);
+    respuesta.status(201).json(usuarioCreado);
   });
 
-  const updateUser = asyncHandler(async (req, res) => {
-    const targetId = parsePositiveId(req.params.id);
-    const existing = await users.findById(targetId);
-    if (!existing) {
-      throw new AppError(404, 'Usuario no encontrado.');
-    }
+  // PUT /api/usuarios/:id - Modificar datos de perfil o rol disciplinario (RN06)
+  const updateUser = asyncHandler(async (peticion, respuesta) => {
+    const idObjetivo = parsePositiveId(peticion.params.id);
+    const usuarioExistente = await users.findById(idObjetivo);
+    if (!usuarioExistente) throw new AppError(404, 'Usuario no encontrado.');
 
-    const isAdmin = req.user.role === 'admin';
-    const isSelf = Number(req.user.id) === Number(targetId);
-    if (!isAdmin && !isSelf) {
+    const esAdmin = peticion.user.role === 'admin';
+    const esPropioPerfil = Number(peticion.user.id) === Number(idObjetivo);
+    if (!esAdmin && !esPropioPerfil) {
       throw new AppError(403, 'No tienes permisos para modificar otro usuario.');
     }
 
     // RN06: Solo un administrador puede modificar rol, estado disciplinario o reputación
-    if (!isAdmin) {
+    if (!esAdmin) {
       if (
-        (req.body.role !== undefined && req.body.role !== existing.role) ||
-        (req.body.status !== undefined && req.body.status !== existing.status) ||
-        (req.body.reputation !== undefined &&
-          Number(req.body.reputation) !== Number(existing.reputation))
+        (peticion.body.role !== undefined && peticion.body.role !== usuarioExistente.role) ||
+        (peticion.body.status !== undefined && peticion.body.status !== usuarioExistente.status) ||
+        (peticion.body.reputation !== undefined && Number(peticion.body.reputation) !== Number(usuarioExistente.reputation))
       ) {
         throw new AppError(
           403,
@@ -142,73 +124,51 @@ export function createUserController(deps = {}) {
       }
     }
 
-    const updates = {};
-    if (req.body.name !== undefined) {
-      const cleanName = String(req.body.name).trim();
-      if (cleanName.length < 2) {
-        throw new AppError(400, 'El nombre debe tener al menos 2 caracteres.');
-      }
-      updates.name = cleanName;
+    const camposActualizados = {};
+    if (peticion.body.name !== undefined) {
+      const nombreLimpio = String(peticion.body.name).trim();
+      if (nombreLimpio.length < 2) throw new AppError(400, 'El nombre debe tener al menos 2 caracteres.');
+      camposActualizados.name = nombreLimpio;
     }
-
-    if (req.body.email !== undefined) {
-      const cleanEmail = String(req.body.email).trim().toLowerCase();
-      if (!isValidEmail(cleanEmail)) {
-        throw new AppError(400, 'El correo electrónico no es válido.');
-      }
-      if (await users.existsByEmail(cleanEmail, targetId)) {
+    if (peticion.body.email !== undefined) {
+      const correoLimpio = String(peticion.body.email).trim().toLowerCase();
+      if (!isValidEmail(correoLimpio)) throw new AppError(400, 'El correo electrónico no es válido.');
+      if (await users.existsByEmail(correoLimpio, idObjetivo)) {
         throw new AppError(409, 'Ya existe otro usuario con ese correo electrónico.');
       }
-      updates.email = cleanEmail;
+      camposActualizados.email = correoLimpio;
+    }
+    if (peticion.body.phone !== undefined) camposActualizados.phone = String(peticion.body.phone).trim();
+    if (peticion.body.city !== undefined) camposActualizados.city = String(peticion.body.city).trim();
+    if (esAdmin && peticion.body.role !== undefined) camposActualizados.role = assertEnumValue(peticion.body.role, ROLES_USUARIO, 'role');
+    if (esAdmin && peticion.body.status !== undefined) camposActualizados.status = assertEnumValue(peticion.body.status, ESTADOS_USUARIO, 'status');
+    if (esAdmin && peticion.body.reputation !== undefined) {
+      const rep = Number(peticion.body.reputation);
+      if (!Number.isFinite(rep) || rep < 1 || rep > 5) throw new AppError(400, 'La reputación debe ubicarse entre 1.00 y 5.00.');
+      camposActualizados.reputation = rep;
+    }
+    if (peticion.body.password !== undefined && String(peticion.body.password) !== '') {
+      const nuevaContrasena = String(peticion.body.password);
+      if (nuevaContrasena.length < 6) throw new AppError(400, 'La nueva contraseña debe tener al menos 6 caracteres.');
+      camposActualizados.passwordHash = await hashFn(nuevaContrasena, env.bcryptSaltRounds);
     }
 
-    if (req.body.phone !== undefined) {
-      updates.phone = String(req.body.phone).trim();
-    }
-    if (req.body.city !== undefined) {
-      updates.city = String(req.body.city).trim();
-    }
-    if (isAdmin && req.body.role !== undefined) {
-      updates.role = assertEnumValue(req.body.role, USER_ROLES, 'role');
-    }
-    if (isAdmin && req.body.status !== undefined) {
-      updates.status = assertEnumValue(req.body.status, USER_STATUSES, 'status');
-    }
-    if (isAdmin && req.body.reputation !== undefined) {
-      const rep = Number(req.body.reputation);
-      if (!Number.isFinite(rep) || rep < 1 || rep > 5) {
-        throw new AppError(400, 'La reputación debe ubicarse entre 1.00 y 5.00.');
-      }
-      updates.reputation = rep;
-    }
-    if (req.body.password !== undefined && String(req.body.password) !== '') {
-      const newPassword = String(req.body.password);
-      if (newPassword.length < 6) {
-        throw new AppError(400, 'La nueva contraseña debe tener al menos 6 caracteres.');
-      }
-      updates.passwordHash = await hashFn(newPassword, env.bcryptSaltRounds);
-    }
-
-    const updated = await users.update(targetId, updates);
-    res.status(200).json(updated);
+    const usuarioActualizado = await users.update(idObjetivo, camposActualizados);
+    respuesta.status(200).json(usuarioActualizado);
   });
 
-  const deleteUser = asyncHandler(async (req, res) => {
-    const targetId = parsePositiveId(req.params.id);
-    if (Number(req.user.id) === Number(targetId)) {
+  // DELETE /api/usuarios/:id - Dar de baja cuenta
+  const deleteUser = asyncHandler(async (peticion, respuesta) => {
+    const idObjetivo = parsePositiveId(peticion.params.id);
+    if (Number(peticion.user.id) === Number(idObjetivo)) {
       throw new AppError(400, 'No puedes eliminar tu propia cuenta activa.');
     }
 
-    const existing = await users.findById(targetId);
-    if (!existing) {
-      throw new AppError(404, 'Usuario no encontrado.');
-    }
+    const usuarioExistente = await users.findById(idObjetivo);
+    if (!usuarioExistente) throw new AppError(404, 'Usuario no encontrado.');
 
-    await users.remove(targetId);
-    res.status(200).json({
-      message: 'Usuario eliminado correctamente.',
-      id: targetId,
-    });
+    await users.remove(idObjetivo);
+    respuesta.status(200).json({ message: 'Usuario eliminado correctamente.', id: idObjetivo });
   });
 
   return { listUsers, getUserById, createUser, updateUser, deleteUser };
@@ -221,4 +181,3 @@ export const {
   updateUser,
   deleteUser,
 } = createUserController();
-

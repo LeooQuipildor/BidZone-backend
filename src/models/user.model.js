@@ -1,7 +1,7 @@
 import { query } from '../config/db.js';
 import { toIsoUtc } from '../utils/date.js';
 
-const SAFE_USER_COLUMNS = `
+const COLUMNAS_SEGURAS_USUARIO = `
   id,
   name,
   email,
@@ -14,6 +14,7 @@ const SAFE_USER_COLUMNS = `
   updated_at
 `;
 
+// Convierte una fila SQL cruda en un objeto Usuario seguro (nunca expone password_hash)
 export function mapUserRow(row) {
   if (!row) return null;
   return {
@@ -30,73 +31,77 @@ export function mapUserRow(row) {
   };
 }
 
+// Lista los usuarios aplicando filtros de rol, estado o búsqueda por texto
 export async function findAll({ role, status, search } = {}, connection) {
-  const conditions = [];
-  const params = [];
+  const condiciones = [];
+  const parametros = [];
 
   if (role) {
-    conditions.push('role = ?');
-    params.push(role);
+    condiciones.push('role = ?');
+    parametros.push(role);
   }
   if (status) {
-    conditions.push('status = ?');
-    params.push(status);
+    condiciones.push('status = ?');
+    parametros.push(status);
   }
   if (search && String(search).trim() !== '') {
-    const escaped = String(search).trim().replace(/[\\%_]/g, '\\$&');
-    const pattern = `%${escaped}%`;
-    conditions.push('(name LIKE ? OR email LIKE ? OR city LIKE ?)');
-    params.push(pattern, pattern, pattern);
+    const patron = `%${String(search).trim()}%`;
+    condiciones.push('(name LIKE ? OR email LIKE ? OR city LIKE ?)');
+    parametros.push(patron, patron, patron);
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = await query(
-    `SELECT ${SAFE_USER_COLUMNS} FROM users ${whereClause} ORDER BY id DESC`,
-    params,
+  const dondeSql = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const filas = await query(
+    `SELECT ${COLUMNAS_SEGURAS_USUARIO} FROM users ${dondeSql} ORDER BY id DESC`,
+    parametros,
     connection
   );
-  return rows.map(mapUserRow);
+  return filas.map(mapUserRow);
 }
 
+// Busca un usuario por ID
 export async function findById(id, connection) {
-  const rows = await query(
-    `SELECT ${SAFE_USER_COLUMNS} FROM users WHERE id = ? LIMIT 1`,
+  const filas = await query(
+    `SELECT ${COLUMNAS_SEGURAS_USUARIO} FROM users WHERE id = ? LIMIT 1`,
     [Number(id)],
     connection
   );
-  return mapUserRow(rows[0]);
+  return mapUserRow(filas[0]);
 }
 
+// Busca un usuario para autenticación (incluye password_hash para bcrypt)
 export async function findAuthByEmail(email, connection) {
-  const rows = await query(
-    `SELECT ${SAFE_USER_COLUMNS}, password_hash FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
+  const filas = await query(
+    `SELECT ${COLUMNAS_SEGURAS_USUARIO}, password_hash FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
     [String(email).trim()],
     connection
   );
-  if (!rows[0]) return null;
+  if (!filas[0]) return null;
   return {
-    ...mapUserRow(rows[0]),
-    passwordHash: rows[0].password_hash,
+    ...mapUserRow(filas[0]),
+    passwordHash: filas[0].password_hash,
   };
 }
 
+// Comprueba si un correo electrónico ya está registrado
 export async function existsByEmail(email, excludeUserId = null, connection) {
-  const params = [String(email).trim()];
+  const parametros = [String(email).trim()];
   let sql = 'SELECT id FROM users WHERE LOWER(email) = LOWER(?)';
   if (excludeUserId) {
     sql += ' AND id <> ?';
-    params.push(Number(excludeUserId));
+    parametros.push(Number(excludeUserId));
   }
   sql += ' LIMIT 1';
-  const rows = await query(sql, params, connection);
-  return rows.length > 0;
+  const filas = await query(sql, parametros, connection);
+  return filas.length > 0;
 }
 
+// Inserta un nuevo usuario en la base de datos
 export async function create(
   { name, email, passwordHash, role = 'user', phone = '', city = '', status = 'active', reputation = 5.0 },
   connection
 ) {
-  const result = await query(
+  const resultado = await query(
     `INSERT INTO users (name, email, password_hash, role, phone, city, status, reputation)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -111,11 +116,12 @@ export async function create(
     ],
     connection
   );
-  return findById(result.insertId, connection);
+  return findById(resultado.insertId, connection);
 }
 
+// Actualiza los datos de un usuario existente
 export async function update(id, fields, connection) {
-  const allowedColumnMap = {
+  const mapaColumnas = {
     name: 'name',
     email: 'email',
     passwordHash: 'password_hash',
@@ -126,40 +132,32 @@ export async function update(id, fields, connection) {
     reputation: 'reputation',
   };
 
-  const setClauses = [];
-  const params = [];
+  const clausulasSet = [];
+  const parametros = [];
 
-  for (const [key, column] of Object.entries(allowedColumnMap)) {
-    if (fields[key] !== undefined) {
-      setClauses.push(`${column} = ?`);
-      params.push(key === 'email' ? String(fields[key]).toLowerCase() : fields[key]);
+  for (const [clave, columna] of Object.entries(mapaColumnas)) {
+    if (fields[clave] !== undefined) {
+      clausulasSet.push(`${columna} = ?`);
+      parametros.push(clave === 'email' ? String(fields[clave]).toLowerCase() : fields[clave]);
     }
   }
 
-  if (setClauses.length === 0) {
-    return findById(id, connection);
-  }
+  if (clausulasSet.length === 0) return findById(id, connection);
 
-  params.push(Number(id));
-  await query(
-    `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`,
-    params,
-    connection
-  );
+  parametros.push(Number(id));
+  await query(`UPDATE users SET ${clausulasSet.join(', ')} WHERE id = ?`, parametros, connection);
   return findById(id, connection);
 }
 
+// Elimina un usuario por ID
 export async function remove(id, connection) {
-  const result = await query(
-    'DELETE FROM users WHERE id = ?',
-    [Number(id)],
-    connection
-  );
-  return result.affectedRows > 0;
+  const resultado = await query('DELETE FROM users WHERE id = ?', [Number(id)], connection);
+  return resultado.affectedRows > 0;
 }
 
+// Obtiene los IDs de usuarios con los que se concretó una subasta finalizada (RN05)
 export async function getFinalizedPartnerIds(userId, connection) {
-  const rows = await query(
+  const filas = await query(
     `SELECT DISTINCT
        CASE
          WHEN seller_id = ? THEN winner_id
@@ -172,6 +170,5 @@ export async function getFinalizedPartnerIds(userId, connection) {
     [Number(userId), Number(userId), Number(userId)],
     connection
   );
-  return new Set(rows.map((r) => Number(r.partner_id)));
+  return new Set(filas.map((r) => Number(r.partner_id)));
 }
-

@@ -9,9 +9,10 @@ import {
   requireFields,
 } from '../middlewares/validate.middleware.js';
 
-const REPORT_STATUSES = ['en_revision', 'resuelto_sancion', 'desestimado'];
-const ACCOUNT_ACTIONS = ['none', 'suspend', 'close', 'activate'];
+const ESTADOS_REPORTE = ['en_revision', 'resuelto_sancion', 'desestimado'];
+const ACCIONES_CUENTA = ['none', 'suspend', 'close', 'activate'];
 
+// Controlador de tickets de reporte y mediación de infracciones (RN06)
 export function createReportController(deps = {}) {
   const reports = deps.reportModel || reportModel;
   const auctions = deps.auctionModel || auctionModel;
@@ -19,232 +20,167 @@ export function createReportController(deps = {}) {
   const runTx = deps.withTransaction || withTransaction;
   const runQuery = deps.query || query;
 
-  const listReports = asyncHandler(async (req, res) => {
-    const { status, auctionId } = req.query;
-    if (status && status !== 'todos') {
-      assertEnumValue(status, REPORT_STATUSES, 'status');
-    }
+  // GET /api/reportes - Listar reportes (Admin ve todos; usuario ve solo donde participa)
+  const listReports = asyncHandler(async (peticion, respuesta) => {
+    const { status, auctionId } = peticion.query;
+    if (status && status !== 'todos') assertEnumValue(status, ESTADOS_REPORTE, 'status');
 
-    const parsedAuctionId = auctionId ? parsePositiveId(auctionId) : undefined;
-    if (auctionId && !parsedAuctionId) {
+    const idSubastaNumerico = auctionId ? parsePositiveId(auctionId) : undefined;
+    if (auctionId && !idSubastaNumerico) {
       throw new AppError(400, 'El filtro auctionId debe ser un entero positivo.');
     }
 
-    const list = await reports.findAll({
+    const listado = await reports.findAll({
       status,
-      auctionId: parsedAuctionId,
-      participantUserId: req.user.role === 'admin' ? undefined : req.user.id,
+      auctionId: idSubastaNumerico,
+      participantUserId: peticion.user.role === 'admin' ? undefined : peticion.user.id,
     });
-
-    res.status(200).json(list);
+    respuesta.status(200).json(listado);
   });
 
-  const getReportById = asyncHandler(async (req, res) => {
-    const reportId = parsePositiveId(req.params.id);
-    const report = await reports.findById(reportId);
-    if (!report) {
-      throw new AppError(404, 'Reporte no encontrado.');
-    }
+  // GET /api/reportes/:id - Consultar un expediente específico
+  const getReportById = asyncHandler(async (peticion, respuesta) => {
+    const idReporte = parsePositiveId(peticion.params.id);
+    const reporte = await reports.findById(idReporte);
+    if (!reporte) throw new AppError(404, 'Reporte no encontrado.');
 
-    const isAdmin = req.user.role === 'admin';
-    const isInvolved =
-      Number(report.reporterId) === Number(req.user.id) ||
-      Number(report.reportedUserId) === Number(req.user.id);
+    const esAdmin = peticion.user.role === 'admin';
+    const participaEnReporte =
+      Number(reporte.reporterId) === Number(peticion.user.id) ||
+      Number(reporte.reportedUserId) === Number(peticion.user.id);
 
-    if (!isAdmin && !isInvolved) {
+    if (!esAdmin && !participaEnReporte) {
       throw new AppError(403, 'No tienes permisos para ver este expediente de reporte.');
     }
-
-    res.status(200).json(report);
+    respuesta.status(200).json(reporte);
   });
 
-  const createReport = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['auctionId', 'reportedUserId', 'reason', 'description']);
+  // POST /api/reportes - Crear un nuevo ticket de reporte (RN06)
+  const createReport = asyncHandler(async (peticion, respuesta) => {
+    requireFields(peticion.body, ['auctionId', 'reportedUserId', 'reason', 'description']);
 
-    const auctionId = parsePositiveId(req.body.auctionId);
-    const reportedUserId = parsePositiveId(req.body.reportedUserId);
-    if (!auctionId || !reportedUserId) {
+    const idSubasta = parsePositiveId(peticion.body.auctionId);
+    const idDenunciado = parsePositiveId(peticion.body.reportedUserId);
+    if (!idSubasta || !idDenunciado) {
       throw new AppError(400, 'auctionId y reportedUserId deben ser enteros positivos válidos.');
     }
-
-    if (Number(reportedUserId) === Number(req.user.id)) {
+    if (Number(idDenunciado) === Number(peticion.user.id)) {
       throw new AppError(400, 'No puedes generar un reporte en tu propia contra.');
     }
 
-    const reason = String(req.body.reason).trim();
-    const description = String(req.body.description).trim();
-    const evidenceUrl = req.body.evidenceUrl ? String(req.body.evidenceUrl).trim() : '';
+    const motivo = String(peticion.body.reason).trim();
+    const descripcion = String(peticion.body.description).trim();
+    const urlEvidencia = peticion.body.evidenceUrl ? String(peticion.body.evidenceUrl).trim() : '';
 
-    const auction = await auctions.findById(auctionId);
-    if (!auction) {
-      throw new AppError(404, 'La subasta referenciada no existe.');
-    }
+    const subasta = await auctions.findById(idSubasta);
+    if (!subasta) throw new AppError(404, 'La subasta referenciada no existe.');
 
-    const reportedUser = await users.findById(reportedUserId);
-    if (!reportedUser) {
-      throw new AppError(404, 'El usuario denunciado no existe.');
-    }
+    const usuarioDenunciado = await users.findById(idDenunciado);
+    if (!usuarioDenunciado) throw new AppError(404, 'El usuario denunciado no existe.');
 
-    const created = await runTx(async (conn) => {
-      const report = await reports.create(conn, {
-        auctionId,
-        reporterId: req.user.id,
-        reportedUserId,
-        reason,
-        description,
-        evidenceUrl,
+    const reporteCreado = await runTx(async (conn) => {
+      const reporte = await reports.create(conn, {
+        auctionId: idSubasta,
+        reporterId: peticion.user.id,
+        reportedUserId: idDenunciado,
+        reason: motivo,
+        description: descripcion,
+        evidenceUrl: urlEvidencia,
         status: 'en_revision',
         sanctionApplied: 'Pendiente de evaluación',
       });
 
       await runQuery(
-        `INSERT INTO notifications (user_id, auction_id, title, message, type)
-         VALUES (?, ?, ?, ?, 'report')`,
+        `INSERT INTO notifications (user_id, auction_id, title, message, type) VALUES (?, ?, ?, ?, 'report')`,
         [
-          reportedUserId,
-          auctionId,
+          idDenunciado,
+          idSubasta,
           'Nuevo reporte de incumplimiento registrado',
-          `Se ha abierto un expediente de mediación (#${report.id}) por "${reason}".`,
+          `Se ha abierto un expediente de mediación (#${reporte.id}) por "${motivo}".`,
         ],
         conn
       );
 
-      return report;
+      return reporte;
     });
 
-    res.status(201).json(created);
+    respuesta.status(201).json(reporteCreado);
   });
 
-  const updateReport = asyncHandler(async (req, res) => {
-    const reportId = parsePositiveId(req.params.id);
+  // PATCH /api/reportes/:id - Resolver ticket (Admin) o editar evidencia (Denunciante)
+  const updateReport = asyncHandler(async (peticion, respuesta) => {
+    const idReporte = parsePositiveId(peticion.params.id);
+    if (peticion.body.status !== undefined) assertEnumValue(peticion.body.status, ESTADOS_REPORTE, 'status');
+    if (peticion.body.accountAction !== undefined) assertEnumValue(peticion.body.accountAction, ACCIONES_CUENTA, 'accountAction');
 
-    if (req.body.status !== undefined) {
-      assertEnumValue(req.body.status, REPORT_STATUSES, 'status');
-    }
-    if (req.body.accountAction !== undefined) {
-      assertEnumValue(req.body.accountAction, ACCOUNT_ACTIONS, 'accountAction');
-    }
+    const reporteActualizado = await runTx(async (conn) => {
+      const reporteExistente = await reports.findById(idReporte, conn);
+      if (!reporteExistente) throw new AppError(404, 'Reporte no encontrado.');
 
-    const updated = await runTx(async (conn) => {
-      const existing = await reports.findById(reportId, conn);
-      if (!existing) {
-        throw new AppError(404, 'Reporte no encontrado.');
-      }
-
-      const isAdmin = req.user.role === 'admin';
-      const isReporter = Number(existing.reporterId) === Number(req.user.id);
-
-      if (!isAdmin && !isReporter) {
+      const esAdmin = peticion.user.role === 'admin';
+      const esDenunciante = Number(reporteExistente.reporterId) === Number(peticion.user.id);
+      if (!esAdmin && !esDenunciante) {
         throw new AppError(403, 'No tienes permisos para modificar este reporte.');
       }
 
-      if (!isAdmin) {
+      if (!esAdmin) {
         if (
-          (req.body.status !== undefined && req.body.status !== existing.status) ||
-          (req.body.sanctionApplied !== undefined &&
-            String(req.body.sanctionApplied).trim() !== existing.sanctionApplied) ||
-          (req.body.accountAction !== undefined && req.body.accountAction !== 'none')
+          (peticion.body.status !== undefined && peticion.body.status !== reporteExistente.status) ||
+          (peticion.body.sanctionApplied !== undefined && String(peticion.body.sanctionApplied).trim() !== reporteExistente.sanctionApplied) ||
+          (peticion.body.accountAction !== undefined && peticion.body.accountAction !== 'none')
         ) {
-          throw new AppError(
-            403,
-            'RN06: Solo un administrador puede resolver el expediente o aplicar sanciones disciplinarias.'
-          );
+          throw new AppError(403, 'RN06: Solo un administrador puede resolver el expediente o aplicar sanciones disciplinarias.');
         }
-        if (existing.status !== 'en_revision') {
-          throw new AppError(
-            409,
-            'Este expediente ya fue resuelto y no puede ser modificado.'
-          );
+        if (reporteExistente.status !== 'en_revision') {
+          throw new AppError(409, 'Este expediente ya fue resuelto y no puede ser modificado.');
         }
       }
 
-      const updates = {};
-      if (req.body.reason !== undefined) {
-        const cleanReason = String(req.body.reason).trim();
-        if (!cleanReason) {
-          throw new AppError(400, 'El motivo del reporte no puede quedar vacío.');
-        }
-        updates.reason = cleanReason;
-      }
-      if (req.body.description !== undefined) {
-        const cleanDesc = String(req.body.description).trim();
-        if (!cleanDesc) {
-          throw new AppError(400, 'La descripción del reporte no puede quedar vacía.');
-        }
-        updates.description = cleanDesc;
-      }
-      if (req.body.evidenceUrl !== undefined) {
-        updates.evidenceUrl = String(req.body.evidenceUrl).trim();
-      }
-      if (isAdmin && req.body.status !== undefined) {
-        updates.status = req.body.status;
-      }
-      if (isAdmin && req.body.sanctionApplied !== undefined) {
-        updates.sanctionApplied = String(req.body.sanctionApplied).trim();
-      }
+      const camposActualizados = {};
+      if (peticion.body.reason) camposActualizados.reason = String(peticion.body.reason).trim();
+      if (peticion.body.description) camposActualizados.description = String(peticion.body.description).trim();
+      if (peticion.body.evidenceUrl !== undefined) camposActualizados.evidenceUrl = String(peticion.body.evidenceUrl).trim();
+      if (esAdmin && peticion.body.status !== undefined) camposActualizados.status = peticion.body.status;
+      if (esAdmin && peticion.body.sanctionApplied !== undefined) camposActualizados.sanctionApplied = String(peticion.body.sanctionApplied).trim();
 
-      const saved = await reports.update(conn, reportId, updates);
+      const reporteGuardado = await reports.update(conn, idReporte, camposActualizados);
 
-      // RN06: Aplicar sanción disciplinaria sobre el usuario reportado (solo Admin)
-      const action = isAdmin ? req.body.accountAction : 'none';
-      if (
-        isAdmin &&
-        (saved.status === 'resuelto_sancion' ||
-          action === 'suspend' ||
-          action === 'close')
-      ) {
-        const nextUserStatus = action === 'close' ? 'closed' : 'suspended';
+      // RN06: Si el administrador dictaminó sanción, actualizamos el estado de la cuenta del infractor
+      const accionDisciplinaria = esAdmin ? peticion.body.accountAction : 'none';
+      if (esAdmin && (reporteGuardado.status === 'resuelto_sancion' || accionDisciplinaria === 'suspend' || accionDisciplinaria === 'close')) {
+        const nuevoEstado = accionDisciplinaria === 'close' ? 'closed' : 'suspended';
+        await runQuery('UPDATE users SET status = ? WHERE id = ?', [nuevoEstado, reporteGuardado.reportedUserId], conn);
         await runQuery(
-          'UPDATE users SET status = ? WHERE id = ?',
-          [nextUserStatus, saved.reportedUserId],
-          conn
-        );
-        await runQuery(
-          `INSERT INTO notifications (user_id, auction_id, title, message, type)
-           VALUES (?, ?, ?, ?, 'report')`,
+          `INSERT INTO notifications (user_id, auction_id, title, message, type) VALUES (?, ?, ?, ?, 'report')`,
           [
-            saved.reportedUserId,
-            saved.auctionId,
+            reporteGuardado.reportedUserId,
+            reporteGuardado.auctionId,
             'Resolución de expediente disciplinario',
-            `Tu cuenta cambió al estado "${nextUserStatus}" tras el expediente #${saved.id}: ${saved.sanctionApplied}.`,
+            `Tu cuenta cambió al estado "${nuevoEstado}" tras el expediente #${reporteGuardado.id}: ${reporteGuardado.sanctionApplied}.`,
           ],
           conn
         );
-      } else if (isAdmin && action === 'activate') {
-        await runQuery(
-          'UPDATE users SET status = ? WHERE id = ?',
-          ['active', saved.reportedUserId],
-          conn
-        );
+      } else if (esAdmin && accionDisciplinaria === 'activate') {
+        await runQuery('UPDATE users SET status = ? WHERE id = ?', ['active', reporteGuardado.reportedUserId], conn);
       }
 
-      return saved;
+      return reporteGuardado;
     });
 
-    res.status(200).json(updated);
+    respuesta.status(200).json(reporteActualizado);
   });
 
-  const deleteReport = asyncHandler(async (req, res) => {
-    const reportId = parsePositiveId(req.params.id);
-    const existing = await reports.findById(reportId);
-    if (!existing) {
-      throw new AppError(404, 'Reporte no encontrado.');
-    }
+  // DELETE /api/reportes/:id - Eliminar reporte
+  const deleteReport = asyncHandler(async (peticion, respuesta) => {
+    const idReporte = parsePositiveId(peticion.params.id);
+    const reporteExistente = await reports.findById(idReporte);
+    if (!reporteExistente) throw new AppError(404, 'Reporte no encontrado.');
 
-    await reports.remove(reportId);
-    res.status(200).json({
-      message: 'Reporte eliminado correctamente.',
-      id: reportId,
-    });
+    await reports.remove(idReporte);
+    respuesta.status(200).json({ message: 'Reporte eliminado correctamente.', id: idReporte });
   });
 
-  return {
-    listReports,
-    getReportById,
-    createReport,
-    updateReport,
-    deleteReport,
-  };
+  return { listReports, getReportById, createReport, updateReport, deleteReport };
 }
 
 export const {
@@ -254,4 +190,3 @@ export const {
   updateReport,
   deleteReport,
 } = createReportController();
-

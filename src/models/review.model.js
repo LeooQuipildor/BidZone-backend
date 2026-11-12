@@ -1,6 +1,7 @@
 import { query } from '../config/db.js';
 import { toIsoUtc } from '../utils/date.js';
 
+// Convierte una fila SQL cruda en un objeto Reseña estándar para la API
 export function mapReviewRow(row) {
   if (!row) return null;
   return {
@@ -19,25 +20,26 @@ export function mapReviewRow(row) {
   };
 }
 
+// Lista las calificaciones aplicando filtros opcionales
 export async function findAll({ auctionId, targetUserId, reviewerId } = {}, connection) {
-  const conditions = [];
-  const params = [];
+  const condiciones = [];
+  const parametros = [];
 
   if (auctionId) {
-    conditions.push('rv.auction_id = ?');
-    params.push(Number(auctionId));
+    condiciones.push('rv.auction_id = ?');
+    parametros.push(Number(auctionId));
   }
   if (targetUserId) {
-    conditions.push('rv.target_user_id = ?');
-    params.push(Number(targetUserId));
+    condiciones.push('rv.target_user_id = ?');
+    parametros.push(Number(targetUserId));
   }
   if (reviewerId) {
-    conditions.push('rv.reviewer_id = ?');
-    params.push(Number(reviewerId));
+    condiciones.push('rv.reviewer_id = ?');
+    parametros.push(Number(reviewerId));
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = await query(
+  const dondeSql = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const filas = await query(
     `SELECT
        rv.*,
        a.title AS auction_title,
@@ -47,16 +49,17 @@ export async function findAll({ auctionId, targetUserId, reviewerId } = {}, conn
      INNER JOIN auctions a ON a.id = rv.auction_id
      INNER JOIN users u_rev ON u_rev.id = rv.reviewer_id
      INNER JOIN users u_tgt ON u_tgt.id = rv.target_user_id
-     ${whereClause}
+     ${dondeSql}
      ORDER BY rv.created_at DESC, rv.id DESC`,
-    params,
+    parametros,
     connection
   );
-  return rows.map(mapReviewRow);
+  return filas.map(mapReviewRow);
 }
 
+// Busca una calificación por ID
 export async function findById(id, connection) {
-  const rows = await query(
+  const filas = await query(
     `SELECT
        rv.*,
        a.title AS auction_title,
@@ -71,34 +74,37 @@ export async function findById(id, connection) {
     [Number(id)],
     connection
   );
-  return mapReviewRow(rows[0]);
+  return mapReviewRow(filas[0]);
 }
 
+// Verifica si un usuario ya calificó una subasta específica (RN07: Calificación única)
 export async function existsByAuctionAndReviewer(conn, auctionId, reviewerId) {
-  const rows = await query(
+  const filas = await query(
     'SELECT id FROM reviews WHERE auction_id = ? AND reviewer_id = ? LIMIT 1',
     [Number(auctionId), Number(reviewerId)],
     conn
   );
-  return rows.length > 0;
+  return filas.length > 0;
 }
 
+// Recalcula y actualiza la reputación promedio de un usuario en la tabla users
 export async function recalculateUserReputation(conn, targetUserId) {
-  const rows = await query(
+  const filas = await query(
     'SELECT ROUND(AVG(rating), 2) AS avg_rating, COUNT(*) AS total FROM reviews WHERE target_user_id = ?',
     [Number(targetUserId)],
     conn
   );
-  const total = Number(rows[0]?.total || 0);
-  const newReputation = total > 0 ? Number(rows[0].avg_rating) : 5.0;
+  const total = Number(filas[0]?.total || 0);
+  const nuevaReputacion = total > 0 ? Number(filas[0].avg_rating) : 5.0;
   await query(
     'UPDATE users SET reputation = ? WHERE id = ?',
-    [newReputation, Number(targetUserId)],
+    [nuevaReputacion, Number(targetUserId)],
     conn
   );
-  return newReputation;
+  return nuevaReputacion;
 }
 
+// Inserta una nueva calificación en la base de datos
 export async function create(
   conn,
   {
@@ -110,7 +116,7 @@ export async function create(
     roleContext = 'comprador_a_vendedor',
   }
 ) {
-  const result = await query(
+  const resultado = await query(
     `INSERT INTO reviews (auction_id, reviewer_id, target_user_id, rating, comment, role_context)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
@@ -123,45 +129,36 @@ export async function create(
     ],
     conn
   );
-  return findById(result.insertId, conn);
+  return findById(resultado.insertId, conn);
 }
 
+// Actualiza los campos de una calificación existente
 export async function update(conn, id, fields) {
-  const allowedColumnMap = {
+  const mapaColumnas = {
     rating: 'rating',
     comment: 'comment',
     roleContext: 'role_context',
   };
 
-  const setClauses = [];
-  const params = [];
+  const clausulasSet = [];
+  const parametros = [];
 
-  for (const [key, column] of Object.entries(allowedColumnMap)) {
-    if (fields[key] !== undefined) {
-      setClauses.push(`${column} = ?`);
-      params.push(fields[key]);
+  for (const [clave, columna] of Object.entries(mapaColumnas)) {
+    if (fields[clave] !== undefined) {
+      clausulasSet.push(`${columna} = ?`);
+      parametros.push(fields[clave]);
     }
   }
 
-  if (setClauses.length === 0) {
-    return findById(id, conn);
-  }
+  if (clausulasSet.length === 0) return findById(id, conn);
 
-  params.push(Number(id));
-  await query(
-    `UPDATE reviews SET ${setClauses.join(', ')} WHERE id = ?`,
-    params,
-    conn
-  );
+  parametros.push(Number(id));
+  await query(`UPDATE reviews SET ${clausulasSet.join(', ')} WHERE id = ?`, parametros, conn);
   return findById(id, conn);
 }
 
+// Elimina una calificación por ID
 export async function remove(conn, id) {
-  const result = await query(
-    'DELETE FROM reviews WHERE id = ?',
-    [Number(id)],
-    conn
-  );
-  return result.affectedRows > 0;
+  const resultado = await query('DELETE FROM reviews WHERE id = ?', [Number(id)], conn);
+  return resultado.affectedRows > 0;
 }
-

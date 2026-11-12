@@ -1,13 +1,14 @@
 import { query, withTransaction } from '../config/db.js';
 import { toIsoUtc } from '../utils/date.js';
 
-const SORT_CLAUSES = {
+const CLAUSULAS_ORDEN = {
   endingSoon: "a.status = 'activa' DESC, a.end_time ASC, a.id DESC",
   priceAsc: 'a.current_price ASC, a.id DESC',
   priceDesc: 'a.current_price DESC, a.id DESC',
   newest: 'a.created_at DESC, a.id DESC',
 };
 
+// Convierte una fila SQL cruda en un objeto subasta estándar para la API
 export function mapAuctionRow(row) {
   if (!row) return null;
   return {
@@ -28,262 +29,183 @@ export function mapAuctionRow(row) {
     bidCount: row.bid_count !== undefined ? Number(row.bid_count) : undefined,
     sellerName: row.seller_name ?? undefined,
     sellerCity: row.seller_city ?? undefined,
-    sellerReputation:
-      row.seller_reputation !== undefined ? Number(row.seller_reputation) : undefined,
+    sellerReputation: row.seller_reputation !== undefined ? Number(row.seller_reputation) : undefined,
     winnerName: row.winner_name ?? undefined,
   };
 }
 
+// Cierra automáticamente las subastas expiradas y asigna al ganador (RN03)
 export async function syncExpiredAuctions() {
-  const expiredCheck = await query(
+  const expiradasCheck = await query(
     `SELECT id FROM auctions WHERE status = 'activa' AND end_time <= UTC_TIMESTAMP() LIMIT 1`
   );
-  if (expiredCheck.length === 0) return 0;
+  if (expiradasCheck.length === 0) return 0;
 
   return withTransaction(async (conn) => {
-    const expiredAuctions = await query(
-      `SELECT id, title, seller_id
-       FROM auctions
-       WHERE status = 'activa' AND end_time <= UTC_TIMESTAMP()
-       FOR UPDATE`,
+    const expiradas = await query(
+      `SELECT id, title, seller_id FROM auctions WHERE status = 'activa' AND end_time <= UTC_TIMESTAMP() FOR UPDATE`,
       [],
       conn
     );
 
-    let closedCount = 0;
-    for (const auction of expiredAuctions) {
-      const topBids = await query(
-        `SELECT bidder_id, amount
-         FROM bids
-         WHERE auction_id = ?
-         ORDER BY amount DESC, id ASC
-         LIMIT 1`,
-        [auction.id],
+    for (const subasta of expiradas) {
+      const mejores = await query(
+        `SELECT bidder_id, amount FROM bids WHERE auction_id = ? ORDER BY amount DESC, id ASC LIMIT 1`,
+        [subasta.id],
         conn
       );
-      const topBid = topBids[0] || null;
+      const topBid = mejores[0] || null;
 
       await query(
         `UPDATE auctions SET status = 'finalizada', winner_id = ? WHERE id = ?`,
-        [topBid ? topBid.bidder_id : null, auction.id],
+        [topBid ? topBid.bidder_id : null, subasta.id],
         conn
       );
 
       if (topBid) {
         await query(
-          `INSERT INTO notifications (user_id, auction_id, title, message, type)
-           VALUES (?, ?, ?, ?, 'won')`,
-          [
-            topBid.bidder_id,
-            auction.id,
-            '¡Subasta ganada! Datos de contacto liberados',
-            `Resultaste ganador de "${auction.title}" con $${Number(topBid.amount).toLocaleString('es-AR')}. Ya puedes ver los datos de contacto del vendedor.`,
-          ],
+          `INSERT INTO notifications (user_id, auction_id, title, message, type) VALUES (?, ?, ?, ?, 'won')`,
+          [topBid.bidder_id, subasta.id, '¡Subasta ganada! Datos de contacto liberados', `Resultaste ganador de "${subasta.title}".`],
           conn
         );
-
         await query(
-          `INSERT INTO notifications (user_id, auction_id, title, message, type)
-           VALUES (?, ?, ?, ?, 'closed')`,
-          [
-            auction.seller_id,
-            auction.id,
-            'Subasta finalizada con ganador',
-            `Tu subasta "${auction.title}" cerró en $${Number(topBid.amount).toLocaleString('es-AR')}. Ingresa al detalle para coordinar la entrega.`,
-          ],
+          `INSERT INTO notifications (user_id, auction_id, title, message, type) VALUES (?, ?, ?, ?, 'closed')`,
+          [subasta.seller_id, subasta.id, 'Subasta finalizada con ganador', `Tu subasta "${subasta.title}" cerró con un ganador.`],
           conn
         );
       }
-
-      closedCount += 1;
     }
-    return closedCount;
+    return expiradas.length;
   });
 }
 
-export async function findAll(
-  { category, status, search, sellerId, sortBy = 'endingSoon' } = {},
-  connection
-) {
-  const conditions = [];
-  const params = [];
+// Lista todas las subastas con filtros y ordenamiento
+export async function findAll({ category, status, search, sellerId, sortBy = 'endingSoon' } = {}, connection) {
+  const condiciones = [];
+  const parametros = [];
 
   if (category && category !== 'Todas') {
-    conditions.push('a.category = ?');
-    params.push(category);
+    condiciones.push('a.category = ?');
+    parametros.push(category);
   }
   if (status && status !== 'todas') {
-    conditions.push('a.status = ?');
-    params.push(status);
+    condiciones.push('a.status = ?');
+    parametros.push(status);
   }
   if (sellerId) {
-    conditions.push('a.seller_id = ?');
-    params.push(Number(sellerId));
+    condiciones.push('a.seller_id = ?');
+    parametros.push(Number(sellerId));
   }
   if (search && String(search).trim() !== '') {
-    const escaped = String(search).trim().replace(/[\\%_]/g, '\\$&');
-    const pattern = `%${escaped}%`;
-    conditions.push('(a.title LIKE ? OR a.description LIKE ? OR a.category LIKE ?)');
-    params.push(pattern, pattern, pattern);
+    const patron = `%${String(search).trim()}%`;
+    condiciones.push('(a.title LIKE ? OR a.description LIKE ? OR a.category LIKE ?)');
+    parametros.push(patron, patron, patron);
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const orderClause = SORT_CLAUSES[sortBy] || SORT_CLAUSES.endingSoon;
+  const whereSql = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const ordenSql = CLAUSULAS_ORDEN[sortBy] || CLAUSULAS_ORDEN.endingSoon;
 
-  const rows = await query(
-    `SELECT
-       a.*,
-       s.name AS seller_name,
-       s.city AS seller_city,
-       s.reputation AS seller_reputation,
-       w.name AS winner_name,
-       COALESCE(bc.bid_count, 0) AS bid_count
+  const filas = await query(
+    `SELECT a.*, s.name AS seller_name, s.city AS seller_city, s.reputation AS seller_reputation,
+       w.name AS winner_name, COALESCE(bc.bid_count, 0) AS bid_count
      FROM auctions a
      INNER JOIN users s ON s.id = a.seller_id
      LEFT JOIN users w ON w.id = a.winner_id
-     LEFT JOIN (
-       SELECT auction_id, COUNT(*) AS bid_count
-       FROM bids
-       GROUP BY auction_id
-     ) bc ON bc.auction_id = a.id
-     ${whereClause}
-     ORDER BY ${orderClause}`,
-    params,
+     LEFT JOIN (SELECT auction_id, COUNT(*) AS bid_count FROM bids GROUP BY auction_id) bc ON bc.auction_id = a.id
+     ${whereSql}
+     ORDER BY ${ordenSql}`,
+    parametros,
     connection
   );
 
-  return rows.map(mapAuctionRow);
+  return filas.map(mapAuctionRow);
 }
 
+// Busca una subasta por ID con datos completos de vendedor y ganador
 export async function findByIdRaw(id, connection) {
-  const rows = await query(
-    `SELECT
-       a.*,
-       s.name AS seller_name,
-       s.email AS seller_email,
-       s.phone AS seller_phone,
-       s.city AS seller_city,
-       s.reputation AS seller_reputation,
-       w.name AS winner_name,
-       w.email AS winner_email,
-       w.phone AS winner_phone,
-       w.city AS winner_city,
-       w.reputation AS winner_reputation,
+  const filas = await query(
+    `SELECT a.*, s.name AS seller_name, s.email AS seller_email, s.phone AS seller_phone,
+       s.city AS seller_city, s.reputation AS seller_reputation,
+       w.name AS winner_name, w.email AS winner_email, w.phone AS winner_phone,
+       w.city AS winner_city, w.reputation AS winner_reputation,
        (SELECT COUNT(*) FROM bids b WHERE b.auction_id = a.id) AS bid_count
      FROM auctions a
      INNER JOIN users s ON s.id = a.seller_id
      LEFT JOIN users w ON w.id = a.winner_id
-     WHERE a.id = ?
-     LIMIT 1`,
+     WHERE a.id = ? LIMIT 1`,
     [Number(id)],
     connection
   );
-  return rows[0] || null;
+  return filas[0] || null;
 }
 
 export async function findById(id, connection) {
-  const row = await findByIdRaw(id, connection);
-  return mapAuctionRow(row);
+  const fila = await findByIdRaw(id, connection);
+  return mapAuctionRow(fila);
 }
 
 export async function findByIdForUpdate(conn, id) {
-  const rows = await query(
-    'SELECT * FROM auctions WHERE id = ? LIMIT 1 FOR UPDATE',
-    [Number(id)],
-    conn
-  );
-  return rows[0] || null;
+  const filas = await query('SELECT * FROM auctions WHERE id = ? LIMIT 1 FOR UPDATE', [Number(id)], conn);
+  return filas[0] || null;
 }
 
 export async function countBids(id, connection) {
-  const rows = await query(
-    'SELECT COUNT(*) AS total FROM bids WHERE auction_id = ?',
-    [Number(id)],
-    connection
-  );
-  return Number(rows[0]?.total || 0);
+  const filas = await query('SELECT COUNT(*) AS total FROM bids WHERE auction_id = ?', [Number(id)], connection);
+  return Number(filas[0]?.total || 0);
 }
 
-export async function create(
-  {
-    title,
-    description = '',
-    category = 'Tecnología',
-    imageUrl = '',
-    basePrice,
-    minIncrement,
-    sellerId,
-    status = 'activa',
-    endTime,
-  },
-  connection
-) {
-  const result = await query(
+// Inserta una nueva subasta en la base de datos
+export async function create(datos, connection) {
+  const resultado = await query(
     `INSERT INTO auctions (
        title, description, category, image_url,
        base_price, current_price, min_increment,
        seller_id, winner_id, status, end_time
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
     [
-      title,
-      description,
-      category,
-      imageUrl,
-      Number(basePrice),
-      Number(basePrice),
-      Number(minIncrement),
-      Number(sellerId),
-      status,
-      endTime,
+      datos.title,
+      datos.description || '',
+      datos.category || 'Tecnología',
+      datos.imageUrl || '',
+      Number(datos.basePrice),
+      Number(datos.basePrice),
+      Number(datos.minIncrement),
+      Number(datos.sellerId),
+      datos.status || 'activa',
+      datos.endTime,
     ],
     connection
   );
-  return findById(result.insertId, connection);
+  return findById(resultado.insertId, connection);
 }
 
-export async function update(id, fields, connection) {
-  const allowedColumnMap = {
-    title: 'title',
-    description: 'description',
-    category: 'category',
-    imageUrl: 'image_url',
-    basePrice: 'base_price',
-    currentPrice: 'current_price',
-    minIncrement: 'min_increment',
-    winnerId: 'winner_id',
-    status: 'status',
-    endTime: 'end_time',
+// Actualiza los campos modificados de una subasta
+export async function update(id, campos, connection) {
+  const mapaColumnas = {
+    title: 'title', description: 'description', category: 'category',
+    imageUrl: 'image_url', basePrice: 'base_price', currentPrice: 'current_price',
+    minIncrement: 'min_increment', winnerId: 'winner_id', status: 'status', endTime: 'end_time',
   };
 
-  const setClauses = [];
-  const params = [];
-
-  for (const [key, column] of Object.entries(allowedColumnMap)) {
-    if (fields[key] !== undefined) {
-      setClauses.push(`${column} = ?`);
-      params.push(fields[key]);
+  const clausulasSet = [];
+  const parametros = [];
+  for (const [clave, columna] of Object.entries(mapaColumnas)) {
+    if (campos[clave] !== undefined) {
+      clausulasSet.push(`${columna} = ?`);
+      parametros.push(campos[clave]);
     }
   }
 
-  if (setClauses.length === 0) {
-    return findById(id, connection);
+  if (clausulasSet.length > 0) {
+    parametros.push(Number(id));
+    await query(`UPDATE auctions SET ${clausulasSet.join(', ')} WHERE id = ?`, parametros, connection);
   }
 
-  params.push(Number(id));
-  await query(
-    `UPDATE auctions SET ${setClauses.join(', ')} WHERE id = ?`,
-    params,
-    connection
-  );
   return findById(id, connection);
 }
 
+// Elimina una subasta por ID
 export async function remove(id, connection) {
-  const result = await query(
-    'DELETE FROM auctions WHERE id = ?',
-    [Number(id)],
-    connection
-  );
-  return result.affectedRows > 0;
+  const resultado = await query('DELETE FROM auctions WHERE id = ?', [Number(id)], connection);
+  return resultado.affectedRows > 0;
 }
-

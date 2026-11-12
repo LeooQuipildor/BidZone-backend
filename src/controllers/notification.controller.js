@@ -7,132 +7,107 @@ import {
   requireFields,
 } from '../middlewares/validate.middleware.js';
 
-const NOTIFICATION_TYPES = ['outbid', 'won', 'closed', 'report', 'system'];
+const TIPOS_NOTIFICACION = ['outbid', 'won', 'closed', 'report', 'system'];
 
+// Controlador de Avisos y Notificaciones del Usuario
 export function createNotificationController(deps = {}) {
   const notifications = deps.notificationModel || notificationModel;
   const users = deps.userModel || userModel;
 
-  const listNotifications = asyncHandler(async (req, res) => {
-    const isAdmin = req.user.role === 'admin';
-    const onlyUnread = req.query.unread === 'true';
+  // GET /api/notificaciones - Listar bandeja de notificaciones
+  const listNotifications = asyncHandler(async (peticion, respuesta) => {
+    const esAdmin = peticion.user.role === 'admin';
+    let idUsuarioObjetivo = peticion.user.id;
 
-    let targetUserId = req.user.id;
-    if (req.query.userId !== undefined) {
-      const parsed = parsePositiveId(req.query.userId);
-      if (!parsed) {
-        throw new AppError(400, 'El parámetro userId debe ser un entero positivo.');
-      }
-      if (!isAdmin && parsed !== Number(req.user.id)) {
+    if (peticion.query.userId !== undefined) {
+      const idNumerico = parsePositiveId(peticion.query.userId);
+      if (!idNumerico) throw new AppError(400, 'El parámetro userId debe ser un entero positivo.');
+      if (!esAdmin && idNumerico !== Number(peticion.user.id)) {
         throw new AppError(403, 'No puedes consultar notificaciones de otro usuario.');
       }
-      targetUserId = parsed;
+      idUsuarioObjetivo = idNumerico;
     }
 
-    const list = await notifications.findAll({
-      userId: targetUserId,
-      onlyUnread,
+    const listado = await notifications.findAll({
+      userId: idUsuarioObjetivo,
+      onlyUnread: peticion.query.unread === 'true',
     });
-    res.status(200).json(list);
+    respuesta.status(200).json(listado);
   });
 
-  const createNotification = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['userId', 'title', 'message']);
+  // POST /api/notificaciones - Enviar notificación oficial (Solo Administrador)
+  const createNotification = asyncHandler(async (peticion, respuesta) => {
+    requireFields(peticion.body, ['userId', 'title', 'message']);
 
-    const userId = parsePositiveId(req.body.userId);
-    if (!userId) {
-      throw new AppError(400, 'El campo userId debe ser un entero positivo.');
-    }
+    const idUsuario = parsePositiveId(peticion.body.userId);
+    if (!idUsuario) throw new AppError(400, 'El campo userId debe ser un entero positivo.');
 
-    const user = await users.findById(userId);
-    if (!user) {
-      throw new AppError(404, 'El usuario destinatario no existe.');
-    }
+    const usuario = await users.findById(idUsuario);
+    if (!usuario) throw new AppError(404, 'El usuario destinatario no existe.');
 
-    const auctionId = req.body.auctionId ? parsePositiveId(req.body.auctionId) : null;
-    if (req.body.auctionId && !auctionId) {
-      throw new AppError(400, 'El campo auctionId debe ser un entero positivo.');
-    }
+    const idSubasta = peticion.body.auctionId ? parsePositiveId(peticion.body.auctionId) : null;
+    const tipo = peticion.body.type ? assertEnumValue(peticion.body.type, TIPOS_NOTIFICACION, 'type') : 'system';
 
-    const type = req.body.type
-      ? assertEnumValue(req.body.type, NOTIFICATION_TYPES, 'type')
-      : 'system';
-
-    const created = await notifications.create({
-      userId,
-      auctionId,
-      title: String(req.body.title).trim(),
-      message: String(req.body.message).trim(),
-      type,
+    const notificacionCreada = await notifications.create({
+      userId: idUsuario,
+      auctionId: idSubasta,
+      title: String(peticion.body.title).trim(),
+      message: String(peticion.body.message).trim(),
+      type: tipo,
     });
 
-    res.status(201).json(created);
+    respuesta.status(201).json(notificacionCreada);
   });
 
-  const markAsRead = asyncHandler(async (req, res) => {
-    const notifId = parsePositiveId(req.params.id);
-    const existing = await notifications.findById(notifId);
-    if (!existing) {
-      throw new AppError(404, 'Notificación no encontrada.');
-    }
+  // PATCH /api/notificaciones/:id/read - Marcar aviso como leído
+  const markAsRead = asyncHandler(async (peticion, respuesta) => {
+    const idNotificacion = parsePositiveId(peticion.params.id);
+    const notificacionExistente = await notifications.findById(idNotificacion);
+    if (!notificacionExistente) throw new AppError(404, 'Notificación no encontrada.');
 
-    const isAdmin = req.user.role === 'admin';
-    if (!isAdmin && Number(existing.userId) !== Number(req.user.id)) {
+    const esAdmin = peticion.user.role === 'admin';
+    if (!esAdmin && Number(notificacionExistente.userId) !== Number(peticion.user.id)) {
       throw new AppError(403, 'No puedes modificar notificaciones de otro usuario.');
     }
 
-    const updated = await notifications.markAsRead(notifId);
-    res.status(200).json(updated);
+    const notificacionActualizada = await notifications.markAsRead(idNotificacion);
+    respuesta.status(200).json(notificacionActualizada);
   });
 
-  const markAllAsRead = asyncHandler(async (req, res) => {
-    const isAdmin = req.user.role === 'admin';
-    let targetUserId = req.user.id;
+  // PATCH /api/notificaciones/read-all - Marcar todas las notificaciones como leídas
+  const markAllAsRead = asyncHandler(async (peticion, respuesta) => {
+    const esAdmin = peticion.user.role === 'admin';
+    let idUsuarioObjetivo = peticion.user.id;
 
-    if (req.body?.userId !== undefined) {
-      const parsed = parsePositiveId(req.body.userId);
-      if (!parsed) {
-        throw new AppError(400, 'El campo userId debe ser un entero positivo.');
-      }
-      if (!isAdmin && parsed !== Number(req.user.id)) {
+    if (peticion.body?.userId !== undefined) {
+      const idNumerico = parsePositiveId(peticion.body.userId);
+      if (!idNumerico) throw new AppError(400, 'El campo userId debe ser un entero positivo.');
+      if (!esAdmin && idNumerico !== Number(peticion.user.id)) {
         throw new AppError(403, 'No puedes actualizar notificaciones de otro usuario.');
       }
-      targetUserId = parsed;
+      idUsuarioObjetivo = idNumerico;
     }
 
-    const updatedCount = await notifications.markAllAsRead(targetUserId);
-    res.status(200).json({
-      message: 'Notificaciones marcadas como leídas.',
-      updatedCount,
-    });
+    const cantidadActualizada = await notifications.markAllAsRead(idUsuarioObjetivo);
+    respuesta.status(200).json({ message: 'Notificaciones marcadas como leídas.', updatedCount: cantidadActualizada });
   });
 
-  const deleteNotification = asyncHandler(async (req, res) => {
-    const notifId = parsePositiveId(req.params.id);
-    const existing = await notifications.findById(notifId);
-    if (!existing) {
-      throw new AppError(404, 'Notificación no encontrada.');
-    }
+  // DELETE /api/notificaciones/:id - Eliminar notificación
+  const deleteNotification = asyncHandler(async (peticion, respuesta) => {
+    const idNotificacion = parsePositiveId(peticion.params.id);
+    const notificacionExistente = await notifications.findById(idNotificacion);
+    if (!notificacionExistente) throw new AppError(404, 'Notificación no encontrada.');
 
-    const isAdmin = req.user.role === 'admin';
-    if (!isAdmin && Number(existing.userId) !== Number(req.user.id)) {
+    const esAdmin = peticion.user.role === 'admin';
+    if (!esAdmin && Number(notificacionExistente.userId) !== Number(peticion.user.id)) {
       throw new AppError(403, 'No puedes eliminar notificaciones de otro usuario.');
     }
 
-    await notifications.remove(notifId);
-    res.status(200).json({
-      message: 'Notificación eliminada correctamente.',
-      id: notifId,
-    });
+    await notifications.remove(idNotificacion);
+    respuesta.status(200).json({ message: 'Notificación eliminada correctamente.', id: idNotificacion });
   });
 
-  return {
-    listNotifications,
-    createNotification,
-    markAsRead,
-    markAllAsRead,
-    deleteNotification,
-  };
+  return { listNotifications, createNotification, markAsRead, markAllAsRead, deleteNotification };
 }
 
 export const {
@@ -142,4 +117,3 @@ export const {
   markAllAsRead,
   deleteNotification,
 } = createNotificationController();
-

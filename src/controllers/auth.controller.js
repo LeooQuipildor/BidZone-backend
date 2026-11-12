@@ -5,91 +5,94 @@ import { AppError, asyncHandler } from '../middlewares/error.middleware.js';
 import { isValidEmail, requireFields } from '../middlewares/validate.middleware.js';
 import { signToken } from '../utils/jwt.js';
 
+// Controlador de Autenticación (Registro, Inicio de Sesión y Verificación de JWT)
 export function createAuthController(deps = {}) {
   const users = deps.userModel || userModel;
   const hashFn = deps.hash || bcrypt.hash;
   const compareFn = deps.compare || bcrypt.compare;
   const signFn = deps.signToken || signToken;
 
-  const register = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['name', 'email', 'password']);
+  // POST /api/autenticacion/register - Registro de nuevos usuarios
+  const register = asyncHandler(async (peticion, respuesta) => {
+    // 1. Validar presencia de campos obligatorios
+    requireFields(peticion.body, ['name', 'email', 'password']);
 
-    const name = String(req.body.name).trim();
-    const email = String(req.body.email).trim().toLowerCase();
-    const password = String(req.body.password);
-    const phone = req.body.phone ? String(req.body.phone).trim() : '';
-    const city = req.body.city ? String(req.body.city).trim() : '';
+    const nombre = String(peticion.body.name).trim();
+    const correo = String(peticion.body.email).trim().toLowerCase();
+    const contrasena = String(peticion.body.password);
+    const telefono = peticion.body.phone ? String(peticion.body.phone).trim() : '';
+    const ciudad = peticion.body.city ? String(peticion.body.city).trim() : '';
 
-    if (name.length < 2) {
-      throw new AppError(400, 'El nombre debe tener al menos 2 caracteres.');
-    }
-    if (!isValidEmail(email)) {
-      throw new AppError(400, 'El correo electrónico ingresado no tiene un formato válido.');
-    }
-    if (password.length < 6) {
-      throw new AppError(400, 'La contraseña debe tener al menos 6 caracteres.');
-    }
+    // 2. Validaciones de formato y longitud mínima
+    if (nombre.length < 2) throw new AppError(400, 'El nombre debe tener al menos 2 caracteres.');
+    if (!isValidEmail(correo)) throw new AppError(400, 'El correo electrónico ingresado no tiene un formato válido.');
+    if (contrasena.length < 6) throw new AppError(400, 'La contraseña debe tener al menos 6 caracteres.');
 
-    const exists = await users.existsByEmail(email);
-    if (exists) {
-      throw new AppError(409, 'El correo electrónico ya se encuentra registrado.');
-    }
+    // 3. Comprobar que el correo no esté registrado previamente
+    const yaExiste = await users.existsByEmail(correo);
+    if (yaExiste) throw new AppError(409, 'El correo electrónico ya se encuentra registrado.');
 
-    const passwordHash = await hashFn(password, env.bcryptSaltRounds);
-    // El registro público siempre asigna rol estándar 'user' y estado 'active'
-    const newUser = await users.create({
-      name,
-      email,
-      passwordHash,
+    // 4. Hashear la contraseña con bcrypt (costo 10)
+    const contrasenaHash = await hashFn(contrasena, env.bcryptSaltRounds);
+
+    // 5. Crear el usuario con rol estándar 'user' y reputación inicial 5.0
+    const nuevoUsuario = await users.create({
+      name: nombre,
+      email: correo,
+      passwordHash: contrasenaHash,
       role: 'user',
-      phone,
-      city,
+      phone: telefono,
+      city: ciudad,
       status: 'active',
       reputation: 5.0,
     });
 
-    const token = signFn(newUser);
-    res.status(201).json({ token, user: newUser });
+    // 6. Firmar y devolver el token JWT
+    const token = signFn(nuevoUsuario);
+    respuesta.status(201).json({ token, user: nuevoUsuario });
   });
 
-  const login = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['email', 'password']);
+  // POST /api/autenticacion/login - Inicio de sesión con credenciales
+  const login = asyncHandler(async (peticion, respuesta) => {
+    requireFields(peticion.body, ['email', 'password']);
 
-    const email = String(req.body.email).trim().toLowerCase();
-    const password = String(req.body.password);
+    const correo = String(peticion.body.email).trim().toLowerCase();
+    const contrasena = String(peticion.body.password);
 
-    if (!isValidEmail(email)) {
-      throw new AppError(400, 'El correo electrónico ingresado no tiene un formato válido.');
-    }
+    if (!isValidEmail(correo)) throw new AppError(400, 'El correo electrónico ingresado no tiene un formato válido.');
 
-    const userRecord = await users.findAuthByEmail(email);
-    if (!userRecord) {
+    // 1. Buscar el usuario en la base de datos por su correo
+    const registroUsuario = await users.findAuthByEmail(correo);
+    if (!registroUsuario) {
       throw new AppError(401, 'Credenciales inválidas. Verifica tu correo y contraseña.');
     }
 
-    const validPassword = await compareFn(password, userRecord.passwordHash);
-    if (!validPassword) {
+    // 2. Comparar el hash bcrypt de la contraseña
+    const contrasenaValida = await compareFn(contrasena, registroUsuario.passwordHash);
+    if (!contrasenaValida) {
       throw new AppError(401, 'Credenciales inválidas. Verifica tu correo y contraseña.');
     }
 
-    if (userRecord.status === 'suspended' || userRecord.status === 'closed') {
+    // 3. RN06: Bloquear acceso si la cuenta está suspendida o cerrada
+    if (registroUsuario.status === 'suspended' || registroUsuario.status === 'closed') {
       throw new AppError(
         403,
         'RN06: Esta cuenta ha sido suspendida o cerrada por infracciones a las reglas de BidZone.'
       );
     }
 
-    const { passwordHash: _removed, ...safeUser } = userRecord;
-    const token = signFn(safeUser);
-    res.status(200).json({ token, user: safeUser });
+    // 4. Omitir el hash de contraseña de la respuesta JSON
+    const { passwordHash: _omitido, ...usuarioSeguro } = registroUsuario;
+    const token = signFn(usuarioSeguro);
+    respuesta.status(200).json({ token, user: usuarioSeguro });
   });
 
-  const me = asyncHandler(async (req, res) => {
-    res.status(200).json({ user: req.user });
+  // GET /api/autenticacion/me - Retorna el perfil autenticado actual
+  const me = asyncHandler(async (peticion, respuesta) => {
+    respuesta.status(200).json({ user: peticion.user });
   });
 
   return { register, login, me };
 }
 
 export const { register, login, me } = createAuthController();
-

@@ -1,6 +1,7 @@
 import { query } from '../config/db.js';
 import { toIsoUtc } from '../utils/date.js';
 
+// Convierte una fila SQL cruda en un objeto Reporte estándar para la API
 export function mapReportRow(row) {
   if (!row) return null;
   return {
@@ -21,25 +22,26 @@ export function mapReportRow(row) {
   };
 }
 
+// Lista los expedientes de mediación aplicando filtros opcionales
 export async function findAll({ status, auctionId, participantUserId } = {}, connection) {
-  const conditions = [];
-  const params = [];
+  const condiciones = [];
+  const parametros = [];
 
   if (status && status !== 'todos') {
-    conditions.push('r.status = ?');
-    params.push(status);
+    condiciones.push('r.status = ?');
+    parametros.push(status);
   }
   if (auctionId) {
-    conditions.push('r.auction_id = ?');
-    params.push(Number(auctionId));
+    condiciones.push('r.auction_id = ?');
+    parametros.push(Number(auctionId));
   }
   if (participantUserId) {
-    conditions.push('(r.reporter_id = ? OR r.reported_user_id = ?)');
-    params.push(Number(participantUserId), Number(participantUserId));
+    condiciones.push('(r.reporter_id = ? OR r.reported_user_id = ?)');
+    parametros.push(Number(participantUserId), Number(participantUserId));
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = await query(
+  const dondeSql = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const filas = await query(
     `SELECT
        r.*,
        a.title AS auction_title,
@@ -49,16 +51,17 @@ export async function findAll({ status, auctionId, participantUserId } = {}, con
      INNER JOIN auctions a ON a.id = r.auction_id
      INNER JOIN users u_rep ON u_rep.id = r.reporter_id
      INNER JOIN users u_inf ON u_inf.id = r.reported_user_id
-     ${whereClause}
+     ${dondeSql}
      ORDER BY r.created_at DESC, r.id DESC`,
-    params,
+    parametros,
     connection
   );
-  return rows.map(mapReportRow);
+  return filas.map(mapReportRow);
 }
 
+// Busca un reporte específico por su ID
 export async function findById(id, connection) {
-  const rows = await query(
+  const filas = await query(
     `SELECT
        r.*,
        a.title AS auction_title,
@@ -73,9 +76,10 @@ export async function findById(id, connection) {
     [Number(id)],
     connection
   );
-  return mapReportRow(rows[0]);
+  return mapReportRow(filas[0]);
 }
 
+// Inserta un nuevo reporte en la base de datos
 export async function create(
   conn,
   {
@@ -89,7 +93,7 @@ export async function create(
     sanctionApplied = 'Pendiente de evaluación',
   }
 ) {
-  const result = await query(
+  const resultado = await query(
     `INSERT INTO reports (
        auction_id, reporter_id, reported_user_id, reason,
        description, evidence_url, status, sanction_applied
@@ -106,11 +110,12 @@ export async function create(
     ],
     conn
   );
-  return findById(result.insertId, conn);
+  return findById(resultado.insertId, conn);
 }
 
+// Actualiza los campos de un reporte existente
 export async function update(conn, id, fields) {
-  const allowedColumnMap = {
+  const mapaColumnas = {
     reason: 'reason',
     description: 'description',
     evidenceUrl: 'evidence_url',
@@ -118,35 +123,25 @@ export async function update(conn, id, fields) {
     sanctionApplied: 'sanction_applied',
   };
 
-  const setClauses = [];
-  const params = [];
+  const clausulasSet = [];
+  const parametros = [];
 
-  for (const [key, column] of Object.entries(allowedColumnMap)) {
-    if (fields[key] !== undefined) {
-      setClauses.push(`${column} = ?`);
-      params.push(fields[key]);
+  for (const [clave, columna] of Object.entries(mapaColumnas)) {
+    if (fields[clave] !== undefined) {
+      clausulasSet.push(`${columna} = ?`);
+      parametros.push(fields[clave]);
     }
   }
 
-  if (setClauses.length === 0) {
-    return findById(id, conn);
-  }
+  if (clausulasSet.length === 0) return findById(id, conn);
 
-  params.push(Number(id));
-  await query(
-    `UPDATE reports SET ${setClauses.join(', ')} WHERE id = ?`,
-    params,
-    conn
-  );
+  parametros.push(Number(id));
+  await query(`UPDATE reports SET ${clausulasSet.join(', ')} WHERE id = ?`, parametros, conn);
   return findById(id, conn);
 }
 
+// Elimina un reporte por su ID
 export async function remove(id, connection) {
-  const result = await query(
-    'DELETE FROM reports WHERE id = ?',
-    [Number(id)],
-    connection
-  );
-  return result.affectedRows > 0;
+  const resultado = await query('DELETE FROM reports WHERE id = ?', [Number(id)], connection);
+  return resultado.affectedRows > 0;
 }
-

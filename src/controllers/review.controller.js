@@ -8,209 +8,177 @@ import {
   requireFields,
 } from '../middlewares/validate.middleware.js';
 
-const ROLE_CONTEXTS = ['comprador_a_vendedor', 'vendedor_a_comprador'];
+const CONTEXTOS_ROL = ['comprador_a_vendedor', 'vendedor_a_comprador'];
 
-function parseRating(value) {
-  const num = Number(value);
-  if (!Number.isInteger(num) || num < 1 || num > 5) {
+function parseRating(valor) {
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 5) {
     throw new AppError(400, 'La calificación debe ser un número entero entre 1 y 5 estrellas.');
   }
-  return num;
+  return numero;
 }
 
+// Controlador de Calificaciones y Reputación Post-Cierre (RN07)
 export function createReviewController(deps = {}) {
   const reviews = deps.reviewModel || reviewModel;
   const auctions = deps.auctionModel || auctionModel;
   const runTx = deps.withTransaction || withTransaction;
 
-  const listReviews = asyncHandler(async (req, res) => {
-    const { auctionId, targetUserId, reviewerId } = req.query;
+  // GET /api/resenas - Listar calificaciones
+  const listReviews = asyncHandler(async (peticion, respuesta) => {
+    const { auctionId, targetUserId, reviewerId } = peticion.query;
 
-    const parsedAuctionId = auctionId ? parsePositiveId(auctionId) : undefined;
-    if (auctionId && !parsedAuctionId) {
+    const idSubastaNumerico = auctionId ? parsePositiveId(auctionId) : undefined;
+    if (auctionId && !idSubastaNumerico) {
       throw new AppError(400, 'El filtro auctionId debe ser un entero positivo.');
     }
 
-    const parsedTargetId = targetUserId ? parsePositiveId(targetUserId) : undefined;
-    if (targetUserId && !parsedTargetId) {
+    const idDestinoNumerico = targetUserId ? parsePositiveId(targetUserId) : undefined;
+    if (targetUserId && !idDestinoNumerico) {
       throw new AppError(400, 'El filtro targetUserId debe ser un entero positivo.');
     }
 
-    const parsedReviewerId = reviewerId ? parsePositiveId(reviewerId) : undefined;
-    if (reviewerId && !parsedReviewerId) {
+    const idAutorNumerico = reviewerId ? parsePositiveId(reviewerId) : undefined;
+    if (reviewerId && !idAutorNumerico) {
       throw new AppError(400, 'El filtro reviewerId debe ser un entero positivo.');
     }
 
-    const list = await reviews.findAll({
-      auctionId: parsedAuctionId,
-      targetUserId: parsedTargetId,
-      reviewerId: parsedReviewerId,
+    const listado = await reviews.findAll({
+      auctionId: idSubastaNumerico,
+      targetUserId: idDestinoNumerico,
+      reviewerId: idAutorNumerico,
     });
-    res.status(200).json(list);
+    respuesta.status(200).json(listado);
   });
 
-  const getReviewById = asyncHandler(async (req, res) => {
-    const reviewId = parsePositiveId(req.params.id);
-    const review = await reviews.findById(reviewId);
-    if (!review) {
-      throw new AppError(404, 'Calificación no encontrada.');
-    }
-    res.status(200).json(review);
+  // GET /api/resenas/:id - Detalle de una calificación
+  const getReviewById = asyncHandler(async (peticion, respuesta) => {
+    const idResena = parsePositiveId(peticion.params.id);
+    const resena = await reviews.findById(idResena);
+    if (!resena) throw new AppError(404, 'Calificación no encontrada.');
+    respuesta.status(200).json(resena);
   });
 
-  const createReview = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['auctionId', 'rating']);
+  // POST /api/resenas - Registrar calificación única entre partes (RN07)
+  const createReview = asyncHandler(async (peticion, respuesta) => {
+    requireFields(peticion.body, ['auctionId', 'rating']);
 
-    const auctionId = parsePositiveId(req.body.auctionId);
-    if (!auctionId) {
-      throw new AppError(400, 'El campo auctionId debe ser un entero positivo.');
-    }
+    const idSubasta = parsePositiveId(peticion.body.auctionId);
+    if (!idSubasta) throw new AppError(400, 'El campo auctionId debe ser un entero positivo.');
 
-    const rating = parseRating(req.body.rating);
-    const comment = req.body.comment ? String(req.body.comment).trim() : '';
+    const puntuacion = parseRating(peticion.body.rating);
+    const comentario = peticion.body.comment ? String(peticion.body.comment).trim() : '';
 
-    const created = await runTx(async (conn) => {
-      const auction = await auctions.findById(auctionId, conn);
-      if (!auction) {
-        throw new AppError(404, 'Subasta no encontrada.');
+    const calificacionCreada = await runTx(async (conn) => {
+      const subasta = await auctions.findById(idSubasta, conn);
+      if (!subasta) throw new AppError(404, 'Subasta no encontrada.');
+
+      // RN07: Calificación permitida únicamente tras el cierre formal con ganador
+      if (subasta.status !== 'finalizada') {
+        throw new AppError(409, 'RN07: Solo se pueden calificar subastas que hayan finalizado formalmente.');
+      }
+      if (!subasta.winnerId) {
+        throw new AppError(409, 'RN07: Esta subasta finalizó sin ganador adjudicado, por lo que no admite calificación.');
       }
 
-      // RN07: Calificación permitida únicamente tras el cierre formal
-      if (auction.status !== 'finalizada') {
-        throw new AppError(
-          409,
-          'RN07: Solo se pueden calificar subastas que hayan finalizado formalmente.'
-        );
-      }
+      const esAdmin = peticion.user.role === 'admin';
+      const esGanador = Number(peticion.user.id) === Number(subasta.winnerId);
+      const esVendedor = Number(peticion.user.id) === Number(subasta.sellerId);
 
-      if (!auction.winnerId) {
-        throw new AppError(
-          409,
-          'RN07: Esta subasta finalizó sin ganador adjudicado, por lo que no admite calificación.'
-        );
-      }
+      let idUsuarioDestino;
+      let contextoRol;
 
-      const isAdmin = req.user.role === 'admin';
-      const isWinner = Number(req.user.id) === Number(auction.winnerId);
-      const isSeller = Number(req.user.id) === Number(auction.sellerId);
-
-      let targetUserId;
-      let roleContext;
-
-      if (isWinner) {
-        targetUserId = auction.sellerId;
-        roleContext = 'comprador_a_vendedor';
-      } else if (isSeller) {
-        targetUserId = auction.winnerId;
-        roleContext = 'vendedor_a_comprador';
-      } else if (isAdmin) {
-        targetUserId = parsePositiveId(req.body.targetUserId);
-        if (!targetUserId || targetUserId === Number(req.user.id)) {
+      if (esGanador) {
+        idUsuarioDestino = subasta.sellerId;
+        contextoRol = 'comprador_a_vendedor';
+      } else if (esVendedor) {
+        idUsuarioDestino = subasta.winnerId;
+        contextoRol = 'vendedor_a_comprador';
+      } else if (esAdmin) {
+        idUsuarioDestino = parsePositiveId(peticion.body.targetUserId);
+        if (!idUsuarioDestino || idUsuarioDestino === Number(peticion.user.id)) {
           throw new AppError(400, 'Debes indicar un targetUserId válido distinto al autor.');
         }
-        roleContext = req.body.roleContext
-          ? assertEnumValue(req.body.roleContext, ROLE_CONTEXTS, 'roleContext')
+        contextoRol = peticion.body.roleContext
+          ? assertEnumValue(peticion.body.roleContext, CONTEXTOS_ROL, 'roleContext')
           : 'comprador_a_vendedor';
       } else {
-        throw new AppError(
-          403,
-          'RN07: Solo el vendedor o el comprador ganador pueden calificar esta operación.'
-        );
+        throw new AppError(403, 'RN07: Solo el vendedor o el comprador ganador pueden calificar esta operación.');
       }
 
-      if (await reviews.existsByAuctionAndReviewer(conn, auctionId, req.user.id)) {
-        throw new AppError(
-          409,
-          'RN07: Ya has emitido una calificación para esta operación.'
-        );
+      // RN07: Máximo una calificación por parte y subasta
+      if (await reviews.existsByAuctionAndReviewer(conn, idSubasta, peticion.user.id)) {
+        throw new AppError(409, 'RN07: Ya has emitido una calificación para esta operación.');
       }
 
-      const saved = await reviews.create(conn, {
-        auctionId,
-        reviewerId: req.user.id,
-        targetUserId,
-        rating,
-        comment,
-        roleContext,
+      const calificacionGuardada = await reviews.create(conn, {
+        auctionId: idSubasta,
+        reviewerId: peticion.user.id,
+        targetUserId: idUsuarioDestino,
+        rating: puntuacion,
+        comment: comentario,
+        roleContext: contextoRol,
       });
 
-      await reviews.recalculateUserReputation(conn, targetUserId);
-      return saved;
+      // Recalcular la reputación promedio del usuario calificado
+      await reviews.recalculateUserReputation(conn, idUsuarioDestino);
+      return calificacionGuardada;
     });
 
-    res.status(201).json(created);
+    respuesta.status(201).json(calificacionCreada);
   });
 
-  const updateReview = asyncHandler(async (req, res) => {
-    const reviewId = parsePositiveId(req.params.id);
+  // PUT /api/resenas/:id - Modificar comentario o puntuación de una reseña propia
+  const updateReview = asyncHandler(async (peticion, respuesta) => {
+    const idResena = parsePositiveId(peticion.params.id);
 
-    const updated = await runTx(async (conn) => {
-      const existing = await reviews.findById(reviewId, conn);
-      if (!existing) {
-        throw new AppError(404, 'Calificación no encontrada.');
-      }
+    const calificacionActualizada = await runTx(async (conn) => {
+      const resenaExistente = await reviews.findById(idResena, conn);
+      if (!resenaExistente) throw new AppError(404, 'Calificación no encontrada.');
 
-      const isAdmin = req.user.role === 'admin';
-      const isAuthor = Number(existing.reviewerId) === Number(req.user.id);
-      if (!isAdmin && !isAuthor) {
+      const esAdmin = peticion.user.role === 'admin';
+      const esAutor = Number(resenaExistente.reviewerId) === Number(peticion.user.id);
+      if (!esAdmin && !esAutor) {
         throw new AppError(403, 'Solo el autor de la reseña o un administrador puede editarla.');
       }
 
-      const updates = {};
-      if (req.body.rating !== undefined) {
-        updates.rating = parseRating(req.body.rating);
-      }
-      if (req.body.comment !== undefined) {
-        updates.comment = String(req.body.comment).trim();
-      }
-      if (isAdmin && req.body.roleContext !== undefined) {
-        updates.roleContext = assertEnumValue(
-          req.body.roleContext,
-          ROLE_CONTEXTS,
-          'roleContext'
-        );
+      const camposActualizados = {};
+      if (peticion.body.rating !== undefined) camposActualizados.rating = parseRating(peticion.body.rating);
+      if (peticion.body.comment !== undefined) camposActualizados.comment = String(peticion.body.comment).trim();
+      if (esAdmin && peticion.body.roleContext !== undefined) {
+        camposActualizados.roleContext = assertEnumValue(peticion.body.roleContext, CONTEXTOS_ROL, 'roleContext');
       }
 
-      const saved = await reviews.update(conn, reviewId, updates);
-      await reviews.recalculateUserReputation(conn, existing.targetUserId);
-      return saved;
+      const calificacionGuardada = await reviews.update(conn, idResena, camposActualizados);
+      await reviews.recalculateUserReputation(conn, resenaExistente.targetUserId);
+      return calificacionGuardada;
     });
 
-    res.status(200).json(updated);
+    respuesta.status(200).json(calificacionActualizada);
   });
 
-  const deleteReview = asyncHandler(async (req, res) => {
-    const reviewId = parsePositiveId(req.params.id);
+  // DELETE /api/resenas/:id - Eliminar calificación
+  const deleteReview = asyncHandler(async (peticion, respuesta) => {
+    const idResena = parsePositiveId(peticion.params.id);
 
     await runTx(async (conn) => {
-      const existing = await reviews.findById(reviewId, conn);
-      if (!existing) {
-        throw new AppError(404, 'Calificación no encontrada.');
-      }
+      const resenaExistente = await reviews.findById(idResena, conn);
+      if (!resenaExistente) throw new AppError(404, 'Calificación no encontrada.');
 
-      const isAdmin = req.user.role === 'admin';
-      const isAuthor = Number(existing.reviewerId) === Number(req.user.id);
-      if (!isAdmin && !isAuthor) {
+      const esAdmin = peticion.user.role === 'admin';
+      const esAutor = Number(resenaExistente.reviewerId) === Number(peticion.user.id);
+      if (!esAdmin && !esAutor) {
         throw new AppError(403, 'Solo el autor de la reseña o un administrador puede eliminarla.');
       }
 
-      await reviews.remove(conn, reviewId);
-      await reviews.recalculateUserReputation(conn, existing.targetUserId);
+      await reviews.remove(conn, idResena);
+      await reviews.recalculateUserReputation(conn, resenaExistente.targetUserId);
     });
 
-    res.status(200).json({
-      message: 'Calificación eliminada y reputación recalculada.',
-      id: reviewId,
-    });
+    respuesta.status(200).json({ message: 'Calificación eliminada y reputación recalculada.', id: idResena });
   });
 
-  return {
-    listReviews,
-    getReviewById,
-    createReview,
-    updateReview,
-    deleteReview,
-  };
+  return { listReviews, getReviewById, createReview, updateReview, deleteReview };
 }
 
 export const {
@@ -220,4 +188,3 @@ export const {
   updateReview,
   deleteReview,
 } = createReviewController();
-

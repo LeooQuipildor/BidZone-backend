@@ -24,6 +24,16 @@ router.get(
   })
 );
 
+// --- Rutas principales en Español ---
+router.use('/autenticacion', authRoutes);
+router.use('/usuarios', userRoutes);
+router.use('/subastas', auctionRoutes);
+router.use('/pujas', bidRoutes);
+router.use('/reportes', reportRoutes);
+router.use('/resenas', reviewRoutes);
+router.use('/notificaciones', notificationRoutes);
+
+// --- Alias en Inglés (para compatibilidad total con pruebas automatizadas) ---
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/auctions', auctionRoutes);

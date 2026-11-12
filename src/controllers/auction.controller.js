@@ -9,275 +9,206 @@ import {
 } from '../middlewares/validate.middleware.js';
 import { toMySqlUtcDatetime } from '../utils/date.js';
 
-const AUCTION_STATUSES = ['activa', 'finalizada', 'cancelada'];
-const AUCTION_SORTS = ['endingSoon', 'priceAsc', 'priceDesc', 'newest'];
-const DEFAULT_AUCTION_IMAGE_URL =
+const ESTADOS_SUBASTA = ['activa', 'finalizada', 'cancelada'];
+const ORDENES_SUBASTA = ['endingSoon', 'priceAsc', 'priceDesc', 'newest'];
+const IMAGEN_POR_DEFECTO =
   'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80';
 
+// Controlador principal de Subastas (conecta HTTP con la base de datos)
 export function createAuctionController(deps = {}) {
   const auctions = deps.auctionModel || auctionModel;
   const bids = deps.bidModel || bidModel;
 
-  const listAuctions = asyncHandler(async (req, res) => {
+  // GET /api/subastas - Listar subastas con filtros y orden
+  const listAuctions = asyncHandler(async (peticion, respuesta) => {
     await auctions.syncExpiredAuctions();
+    const { category, status, search, sellerId, sortBy } = peticion.query;
 
-    const { category, status, search, sellerId, sortBy } = req.query;
-    if (status && status !== 'todas') {
-      assertEnumValue(status, AUCTION_STATUSES, 'status');
-    }
-    if (sortBy) {
-      assertEnumValue(sortBy, AUCTION_SORTS, 'sortBy');
-    }
+    if (status && status !== 'todas') assertEnumValue(status, ESTADOS_SUBASTA, 'status');
+    if (sortBy) assertEnumValue(sortBy, ORDENES_SUBASTA, 'sortBy');
 
-    const parsedSellerId = sellerId ? parsePositiveId(sellerId) : undefined;
-    if (sellerId && !parsedSellerId) {
+    const idVendedorNumerico = sellerId ? parsePositiveId(sellerId) : undefined;
+    if (sellerId && !idVendedorNumerico) {
       throw new AppError(400, 'El filtro sellerId debe ser un entero positivo.');
     }
 
-    const list = await auctions.findAll({
+    const listado = await auctions.findAll({
       category,
       status,
       search,
-      sellerId: parsedSellerId,
+      sellerId: idVendedorNumerico,
       sortBy,
     });
-    res.status(200).json(list);
+    respuesta.status(200).json(listado);
   });
 
-  const getAuctionById = asyncHandler(async (req, res) => {
+  // GET /api/subastas/:id - Detalle de subasta con historial y contacto liberado (RN05)
+  const getAuctionById = asyncHandler(async (peticion, respuesta) => {
     await auctions.syncExpiredAuctions();
+    const idSubasta = parsePositiveId(peticion.params.id);
+    const filaSubasta = await auctions.findByIdRaw(idSubasta);
+    if (!filaSubasta) throw new AppError(404, 'Subasta no encontrada.');
 
-    const auctionId = parsePositiveId(req.params.id);
-    const raw = await auctions.findByIdRaw(auctionId);
-    if (!raw) {
-      throw new AppError(404, 'Subasta no encontrada.');
-    }
+    // RN05: Solo el vendedor y el postor ganador ven datos de contacto tras finalizar
+    const esAdmin = peticion.user?.role === 'admin';
+    const esVendedor = Number(peticion.user?.id) === Number(filaSubasta.seller_id);
+    const esGanador = Number(peticion.user?.id) === Number(filaSubasta.winner_id);
+    const contactoLiberado =
+      filaSubasta.status === 'finalizada' &&
+      filaSubasta.winner_id !== null &&
+      peticion.user &&
+      (esAdmin || esVendedor || esGanador);
 
-    const mapped = auctions.mapAuctionRow(raw);
-    const auctionBids = await bids.findAll({ auctionId });
-
-    // RN05: Solo revelar email/teléfono entre vendedor y ganador al cierre formal (o admin)
-    const canSeeUnlockedContact =
-      raw.status === 'finalizada' &&
-      raw.winner_id !== null &&
-      req.user &&
-      (req.user.role === 'admin' ||
-        Number(req.user.id) === Number(raw.seller_id) ||
-        Number(req.user.id) === Number(raw.winner_id));
-
-    const seller = {
-      id: Number(raw.seller_id),
-      name: raw.seller_name,
-      city: raw.seller_city,
-      reputation: Number(raw.seller_reputation),
-      ...(canSeeUnlockedContact
-        ? { email: raw.seller_email, phone: raw.seller_phone }
-        : {}),
+    const vendedor = {
+      id: Number(filaSubasta.seller_id),
+      name: filaSubasta.seller_name,
+      city: filaSubasta.seller_city,
+      reputation: Number(filaSubasta.seller_reputation),
+      ...(contactoLiberado ? { email: filaSubasta.seller_email, phone: filaSubasta.seller_phone } : {}),
     };
 
-    const winner = raw.winner_id
+    const ganador = filaSubasta.winner_id
       ? {
-          id: Number(raw.winner_id),
-          name: raw.winner_name,
-          city: raw.winner_city,
-          reputation: Number(raw.winner_reputation),
-          ...(canSeeUnlockedContact
-            ? { email: raw.winner_email, phone: raw.winner_phone }
-            : {}),
+          id: Number(filaSubasta.winner_id),
+          name: filaSubasta.winner_name,
+          city: filaSubasta.winner_city,
+          reputation: Number(filaSubasta.winner_reputation),
+          ...(contactoLiberado ? { email: filaSubasta.winner_email, phone: filaSubasta.winner_phone } : {}),
         }
       : null;
 
-    res.status(200).json({
-      ...mapped,
-      bids: auctionBids,
-      seller,
-      winner,
-      contactUnlocked: Boolean(canSeeUnlockedContact),
+    respuesta.status(200).json({
+      ...auctions.mapAuctionRow(filaSubasta),
+      bids: await bids.findAll({ auctionId: idSubasta }),
+      seller: vendedor,
+      winner: ganador,
+      contactUnlocked: Boolean(contactoLiberado),
     });
   });
 
-  const createAuction = asyncHandler(async (req, res) => {
-    requireFields(req.body, ['title', 'basePrice', 'minIncrement', 'endTime']);
+  // POST /api/subastas - Crear y publicar una nueva subasta activa
+  const createAuction = asyncHandler(async (peticion, respuesta) => {
+    requireFields(peticion.body, ['title', 'basePrice', 'minIncrement', 'endTime']);
 
-    const title = String(req.body.title).trim();
-    if (title.length < 3) {
-      throw new AppError(400, 'El título debe tener al menos 3 caracteres.');
-    }
+    const titulo = String(peticion.body.title).trim();
+    if (titulo.length < 3) throw new AppError(400, 'El título debe tener al menos 3 caracteres.');
 
-    const basePrice = assertPositiveNumber(req.body.basePrice, 'basePrice');
-    const minIncrement = assertPositiveNumber(req.body.minIncrement, 'minIncrement');
-    const endTimeSql = toMySqlUtcDatetime(req.body.endTime);
+    const precioBase = assertPositiveNumber(peticion.body.basePrice, 'basePrice');
+    const incrementoMinimo = assertPositiveNumber(peticion.body.minIncrement, 'minIncrement');
+    const fechaCierreSql = toMySqlUtcDatetime(peticion.body.endTime);
 
-    if (!endTimeSql) {
-      throw new AppError(400, 'La fecha de cierre (endTime) no es válida.');
-    }
-    if (new Date(req.body.endTime).getTime() <= Date.now()) {
+    if (!fechaCierreSql || new Date(peticion.body.endTime).getTime() <= Date.now()) {
       throw new AppError(400, 'La fecha de cierre debe ser posterior al momento actual.');
     }
 
-    let sellerId = req.user.id;
-    if (req.user.role === 'admin' && req.body.sellerId !== undefined) {
-      const requestedSeller = parsePositiveId(req.body.sellerId);
-      if (!requestedSeller) {
-        throw new AppError(400, 'El campo sellerId debe ser un entero positivo.');
-      }
-      sellerId = requestedSeller;
+    let idVendedor = peticion.user.id;
+    if (peticion.user.role === 'admin' && peticion.body.sellerId !== undefined) {
+      idVendedor = parsePositiveId(peticion.body.sellerId) || idVendedor;
     }
 
-    const created = await auctions.create({
-      title,
-      description: req.body.description ? String(req.body.description).trim() : '',
-      category: req.body.category ? String(req.body.category).trim() : 'Tecnología',
-      imageUrl: req.body.imageUrl?.trim()
-        ? String(req.body.imageUrl).trim()
-        : DEFAULT_AUCTION_IMAGE_URL,
-      basePrice,
-      minIncrement,
-      sellerId,
+    const subastaCreada = await auctions.create({
+      title: titulo,
+      description: peticion.body.description ? String(peticion.body.description).trim() : '',
+      category: peticion.body.category ? String(peticion.body.category).trim() : 'Tecnología',
+      imageUrl: peticion.body.imageUrl?.trim() || IMAGEN_POR_DEFECTO,
+      basePrice: precioBase,
+      minIncrement: incrementoMinimo,
+      sellerId: idVendedor,
       status: 'activa',
-      endTime: endTimeSql,
+      endTime: fechaCierreSql,
     });
 
-    res.status(201).json(created);
+    respuesta.status(201).json(subastaCreada);
   });
 
-  const updateAuction = asyncHandler(async (req, res) => {
-    const auctionId = parsePositiveId(req.params.id);
-    const existing = await auctions.findById(auctionId);
-    if (!existing) {
-      throw new AppError(404, 'Subasta no encontrada.');
-    }
+  // PUT /api/subastas/:id - Actualizar subasta (RN08: Bloqueo de condiciones con ofertas)
+  const updateAuction = asyncHandler(async (peticion, respuesta) => {
+    const idSubasta = parsePositiveId(peticion.params.id);
+    const subastaExistente = await auctions.findById(idSubasta);
+    if (!subastaExistente) throw new AppError(404, 'Subasta no encontrada.');
 
-    const isAdmin = req.user.role === 'admin';
-    const isOwner = Number(existing.sellerId) === Number(req.user.id);
-    if (!isAdmin && !isOwner) {
+    const esAdmin = peticion.user.role === 'admin';
+    const esPropietario = Number(subastaExistente.sellerId) === Number(peticion.user.id);
+    if (!esAdmin && !esPropietario) {
       throw new AppError(403, 'Solo el vendedor propietario o un administrador puede editar esta subasta.');
     }
 
-    const bidCount = await auctions.countBids(auctionId);
+    const cantidadPujas = await auctions.countBids(idSubasta);
 
-    // RN08: Si ya hay pujas registradas, impedir cambios en reglas de precio/tiempo salvo admin
-    if (bidCount > 0 && !isAdmin) {
-      if (
-        req.body.basePrice !== undefined &&
-        Number(req.body.basePrice) !== Number(existing.basePrice)
-      ) {
-        throw new AppError(
-          409,
-          'RN08: No se puede modificar el precio base porque la subasta ya cuenta con ofertas registradas.'
-        );
+    // RN08: Si ya hay ofertas registradas, impedir cambios de precio base, incremento o fecha
+    if (cantidadPujas > 0 && !esAdmin) {
+      if (peticion.body.basePrice !== undefined && Number(peticion.body.basePrice) !== Number(subastaExistente.basePrice)) {
+        throw new AppError(409, 'RN08: No se puede modificar el precio base porque la subasta ya cuenta con ofertas registradas.');
       }
-      if (
-        req.body.minIncrement !== undefined &&
-        Number(req.body.minIncrement) !== Number(existing.minIncrement)
-      ) {
-        throw new AppError(
-          409,
-          'RN08: No se puede modificar el incremento mínimo porque la subasta ya tiene ofertas activas.'
-        );
+      if (peticion.body.minIncrement !== undefined && Number(peticion.body.minIncrement) !== Number(subastaExistente.minIncrement)) {
+        throw new AppError(409, 'RN08: No se puede modificar el incremento mínimo porque la subasta ya tiene ofertas activas.');
       }
-      if (req.body.endTime !== undefined) {
-        const nextEndSql = toMySqlUtcDatetime(req.body.endTime);
-        const currentEndSql = toMySqlUtcDatetime(existing.endTime);
-        if (nextEndSql !== currentEndSql) {
-          throw new AppError(
-            409,
-            'RN08: No se puede alterar la fecha de cierre una vez recibidas ofertas.'
-          );
+      if (peticion.body.endTime !== undefined) {
+        const siguienteFin = toMySqlUtcDatetime(peticion.body.endTime);
+        const finActual = toMySqlUtcDatetime(subastaExistente.endTime);
+        if (siguienteFin !== finActual) {
+          throw new AppError(409, 'RN08: No se puede alterar la fecha de cierre una vez recibidas ofertas.');
         }
       }
     }
 
-    const updates = {};
-    if (req.body.title !== undefined) {
-      const cleanTitle = String(req.body.title).trim();
-      if (cleanTitle.length < 3) {
-        throw new AppError(400, 'El título debe tener al menos 3 caracteres.');
+    const camposActualizados = {};
+    if (peticion.body.title !== undefined) {
+      const tituloLimpio = String(peticion.body.title).trim();
+      if (tituloLimpio.length < 3) throw new AppError(400, 'El título debe tener al menos 3 caracteres.');
+      camposActualizados.title = tituloLimpio;
+    }
+    if (peticion.body.description !== undefined) camposActualizados.description = String(peticion.body.description).trim();
+    if (peticion.body.category !== undefined) camposActualizados.category = String(peticion.body.category).trim();
+    if (peticion.body.imageUrl !== undefined) camposActualizados.imageUrl = String(peticion.body.imageUrl).trim();
+    if (peticion.body.basePrice !== undefined) {
+      const siguienteBase = assertPositiveNumber(peticion.body.basePrice, 'basePrice');
+      camposActualizados.basePrice = siguienteBase;
+      if (cantidadPujas === 0) camposActualizados.currentPrice = siguienteBase;
+    }
+    if (peticion.body.minIncrement !== undefined) {
+      camposActualizados.minIncrement = assertPositiveNumber(peticion.body.minIncrement, 'minIncrement');
+    }
+    if (peticion.body.endTime !== undefined) {
+      const siguienteFin = toMySqlUtcDatetime(peticion.body.endTime);
+      if (!siguienteFin) throw new AppError(400, 'La fecha de cierre (endTime) no es válida.');
+      camposActualizados.endTime = siguienteFin;
+    }
+    if (peticion.body.status !== undefined) {
+      const siguienteEstado = assertEnumValue(peticion.body.status, ESTADOS_SUBASTA, 'status');
+      if (siguienteEstado !== subastaExistente.status && siguienteEstado !== 'cancelada') {
+        throw new AppError(403, 'No se puede finalizar manualmente una subasta; el cierre ocurre automáticamente al vencer su plazo. Solo es posible cancelarla.');
       }
-      updates.title = cleanTitle;
-    }
-    if (req.body.description !== undefined) {
-      updates.description = String(req.body.description).trim();
-    }
-    if (req.body.category !== undefined) {
-      updates.category = String(req.body.category).trim();
-    }
-    if (req.body.imageUrl !== undefined) {
-      updates.imageUrl = String(req.body.imageUrl).trim();
-    }
-    if (req.body.basePrice !== undefined) {
-      const nextBase = assertPositiveNumber(req.body.basePrice, 'basePrice');
-      updates.basePrice = nextBase;
-      if (bidCount === 0) {
-        updates.currentPrice = nextBase;
+      if (siguienteEstado === 'cancelada' && cantidadPujas > 0 && !esAdmin) {
+        throw new AppError(409, 'No puedes cancelar una subasta que ya tiene pujas activas.');
       }
-    }
-    if (req.body.minIncrement !== undefined) {
-      updates.minIncrement = assertPositiveNumber(req.body.minIncrement, 'minIncrement');
-    }
-    if (req.body.endTime !== undefined) {
-      const nextEndSql = toMySqlUtcDatetime(req.body.endTime);
-      if (!nextEndSql) {
-        throw new AppError(400, 'La fecha de cierre (endTime) no es válida.');
-      }
-      updates.endTime = nextEndSql;
-    }
-    if (req.body.status !== undefined) {
-      const nextStatus = assertEnumValue(req.body.status, AUCTION_STATUSES, 'status');
-      if (nextStatus !== existing.status && nextStatus !== 'cancelada') {
-        throw new AppError(
-          403,
-          'No se puede finalizar manualmente una subasta; el cierre ocurre automáticamente al vencer su plazo. Solo es posible cancelarla.'
-        );
-      }
-      if (nextStatus === 'cancelada' && bidCount > 0 && !isAdmin) {
-        throw new AppError(
-          409,
-          'No puedes cancelar una subasta que ya tiene pujas activas.'
-        );
-      }
-      updates.status = nextStatus;
+      camposActualizados.status = siguienteEstado;
     }
 
-    const updated = await auctions.update(auctionId, updates);
-    res.status(200).json(updated);
+    const subastaActualizada = await auctions.update(idSubasta, camposActualizados);
+    respuesta.status(200).json(subastaActualizada);
   });
 
-  const deleteAuction = asyncHandler(async (req, res) => {
-    const auctionId = parsePositiveId(req.params.id);
-    const existing = await auctions.findById(auctionId);
-    if (!existing) {
-      throw new AppError(404, 'Subasta no encontrada.');
+  // DELETE /api/subastas/:id - Eliminar o cancelar subasta
+  const deleteAuction = asyncHandler(async (peticion, respuesta) => {
+    const idSubasta = parsePositiveId(peticion.params.id);
+    const subastaExistente = await auctions.findById(idSubasta);
+    if (!subastaExistente) throw new AppError(404, 'Subasta no encontrada.');
+
+    const esAdmin = peticion.user.role === 'admin';
+    const esPropietario = Number(subastaExistente.sellerId) === Number(peticion.user.id);
+    if (!esAdmin && !esPropietario) throw new AppError(403, 'No tienes permisos para eliminar esta subasta.');
+
+    const cantidadPujas = await auctions.countBids(idSubasta);
+    if (cantidadPujas > 0 && !esAdmin) {
+      throw new AppError(409, 'RN08: No puedes eliminar una subasta que ya tiene pujas registradas.');
     }
 
-    const isAdmin = req.user.role === 'admin';
-    const isOwner = Number(existing.sellerId) === Number(req.user.id);
-    if (!isAdmin && !isOwner) {
-      throw new AppError(403, 'No tienes permisos para eliminar esta subasta.');
-    }
-
-    const bidCount = await auctions.countBids(auctionId);
-    if (bidCount > 0 && !isAdmin) {
-      throw new AppError(
-        409,
-        'RN08: No puedes eliminar una subasta que ya tiene pujas registradas.'
-      );
-    }
-
-    await auctions.remove(auctionId);
-    res.status(200).json({
-      message: 'Subasta eliminada correctamente.',
-      id: auctionId,
-    });
+    await auctions.remove(idSubasta);
+    respuesta.status(200).json({ message: 'Subasta eliminada correctamente.', id: idSubasta });
   });
 
-  return {
-    listAuctions,
-    getAuctionById,
-    createAuction,
-    updateAuction,
-    deleteAuction,
-  };
+  return { listAuctions, getAuctionById, createAuction, updateAuction, deleteAuction };
 }
 
 export const {
@@ -287,4 +218,3 @@ export const {
   updateAuction,
   deleteAuction,
 } = createAuctionController();
-

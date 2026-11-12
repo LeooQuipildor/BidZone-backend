@@ -1,6 +1,7 @@
 import { query } from '../config/db.js';
 import { toIsoUtc } from '../utils/date.js';
 
+// Convierte una fila SQL cruda en un objeto Notificación estándar para la API
 export function mapNotificationRow(row) {
   if (!row) return null;
   return {
@@ -15,41 +16,44 @@ export function mapNotificationRow(row) {
   };
 }
 
+// Lista las notificaciones de un usuario
 export async function findAll({ userId, onlyUnread = false } = {}, connection) {
-  const conditions = [];
-  const params = [];
+  const condiciones = [];
+  const parametros = [];
 
   if (userId) {
-    conditions.push('user_id = ?');
-    params.push(Number(userId));
+    condiciones.push('user_id = ?');
+    parametros.push(Number(userId));
   }
   if (onlyUnread) {
-    conditions.push('is_read = 0');
+    condiciones.push('is_read = 0');
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = await query(
-    `SELECT * FROM notifications ${whereClause} ORDER BY created_at DESC, id DESC`,
-    params,
+  const dondeSql = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const filas = await query(
+    `SELECT * FROM notifications ${dondeSql} ORDER BY created_at DESC, id DESC`,
+    parametros,
     connection
   );
-  return rows.map(mapNotificationRow);
+  return filas.map(mapNotificationRow);
 }
 
+// Busca una notificación por ID
 export async function findById(id, connection) {
-  const rows = await query(
+  const filas = await query(
     'SELECT * FROM notifications WHERE id = ? LIMIT 1',
     [Number(id)],
     connection
   );
-  return mapNotificationRow(rows[0]);
+  return mapNotificationRow(filas[0]);
 }
 
+// Inserta una nueva notificación en la base de datos
 export async function create(
   { userId, auctionId = null, title, message, type = 'system' },
   connection
 ) {
-  const result = await query(
+  const resultado = await query(
     `INSERT INTO notifications (user_id, auction_id, title, message, type)
      VALUES (?, ?, ?, ?, ?)`,
     [
@@ -61,33 +65,27 @@ export async function create(
     ],
     connection
   );
-  return findById(result.insertId, connection);
+  return findById(resultado.insertId, connection);
 }
 
+// Marca una notificación individual como leída
 export async function markAsRead(id, connection) {
-  await query(
-    'UPDATE notifications SET is_read = 1 WHERE id = ?',
-    [Number(id)],
-    connection
-  );
+  await query('UPDATE notifications SET is_read = 1 WHERE id = ?', [Number(id)], connection);
   return findById(id, connection);
 }
 
+// Marca todas las notificaciones pendientes de un usuario como leídas
 export async function markAllAsRead(userId, connection) {
-  const result = await query(
+  const resultado = await query(
     'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0',
     [Number(userId)],
     connection
   );
-  return result.affectedRows;
+  return resultado.affectedRows;
 }
 
+// Elimina una notificación por ID
 export async function remove(id, connection) {
-  const result = await query(
-    'DELETE FROM notifications WHERE id = ?',
-    [Number(id)],
-    connection
-  );
-  return result.affectedRows > 0;
+  const resultado = await query('DELETE FROM notifications WHERE id = ?', [Number(id)], connection);
+  return resultado.affectedRows > 0;
 }
-
