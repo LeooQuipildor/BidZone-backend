@@ -1,4 +1,3 @@
-import { query, withTransaction } from '../config/db.js';
 import * as auctionModel from '../models/auction.model.js';
 import * as bidModel from '../models/bid.model.js';
 import { AppError, asyncHandler } from '../middlewares/error.middleware.js';
@@ -18,8 +17,6 @@ const DEFAULT_AUCTION_IMAGE_URL =
 export function createAuctionController(deps = {}) {
   const auctions = deps.auctionModel || auctionModel;
   const bids = deps.bidModel || bidModel;
-  const runTx = deps.withTransaction || withTransaction;
-  const runQuery = deps.query || query;
 
   const listAuctions = asyncHandler(async (req, res) => {
     await auctions.syncExpiredAuctions();
@@ -227,10 +224,10 @@ export function createAuctionController(deps = {}) {
     }
     if (req.body.status !== undefined) {
       const nextStatus = assertEnumValue(req.body.status, AUCTION_STATUSES, 'status');
-      if (!isAdmin && nextStatus !== existing.status && nextStatus !== 'cancelada') {
+      if (nextStatus !== existing.status && nextStatus !== 'cancelada') {
         throw new AppError(
           403,
-          'Solo un administrador puede forzar este cambio de estado directamente.'
+          'No se puede finalizar manualmente una subasta; el cierre ocurre automáticamente al vencer su plazo. Solo es posible cancelarla.'
         );
       }
       if (nextStatus === 'cancelada' && bidCount > 0 && !isAdmin) {
@@ -244,64 +241,6 @@ export function createAuctionController(deps = {}) {
 
     const updated = await auctions.update(auctionId, updates);
     res.status(200).json(updated);
-  });
-
-  const closeAuctionNow = asyncHandler(async (req, res) => {
-    const auctionId = parsePositiveId(req.params.id);
-
-    const closed = await runTx(async (conn) => {
-      const locked = await auctions.findByIdForUpdate(conn, auctionId);
-      if (!locked) {
-        throw new AppError(404, 'Subasta no encontrada.');
-      }
-
-      const isAdmin = req.user.role === 'admin';
-      const isOwner = Number(locked.seller_id) === Number(req.user.id);
-      if (!isAdmin && !isOwner) {
-        throw new AppError(403, 'Solo el vendedor o un administrador puede cerrar la subasta.');
-      }
-
-      if (locked.status !== 'activa') {
-        throw new AppError(409, 'La subasta ya se encuentra finalizada o cancelada.');
-      }
-
-      const topBid = await bids.findTopBidByAuction(conn, auctionId);
-      const updated = await auctions.closeWithWinner(
-        conn,
-        auctionId,
-        topBid ? topBid.bidderId : null
-      );
-
-      if (topBid) {
-        await runQuery(
-          `INSERT INTO notifications (user_id, auction_id, title, message, type)
-           VALUES (?, ?, ?, ?, 'won')`,
-          [
-            topBid.bidderId,
-            auctionId,
-            '¡Subasta ganada! Datos de contacto liberados',
-            `Resultaste ganador de "${locked.title}". Ingresa al detalle para coordinar pago y entrega con el vendedor.`,
-          ],
-          conn
-        );
-
-        await runQuery(
-          `INSERT INTO notifications (user_id, auction_id, title, message, type)
-           VALUES (?, ?, ?, ?, 'closed')`,
-          [
-            locked.seller_id,
-            auctionId,
-            'Subasta finalizada con ganador',
-            `Tu subasta "${locked.title}" cerró en $${Number(topBid.amount).toLocaleString('es-AR')}. Ya puedes consultar los datos del comprador.`,
-          ],
-          conn
-        );
-      }
-
-      return updated;
-    });
-
-    res.status(200).json(closed);
   });
 
   const deleteAuction = asyncHandler(async (req, res) => {
@@ -337,7 +276,6 @@ export function createAuctionController(deps = {}) {
     getAuctionById,
     createAuction,
     updateAuction,
-    closeAuctionNow,
     deleteAuction,
   };
 }
@@ -347,7 +285,6 @@ export const {
   getAuctionById,
   createAuction,
   updateAuction,
-  closeAuctionNow,
   deleteAuction,
 } = createAuctionController();
 

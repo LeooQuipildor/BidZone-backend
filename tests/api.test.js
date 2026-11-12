@@ -544,6 +544,28 @@ test('Reglas de negocio RN01-RN08 en subastas, pujas, reseñas y reportes', asyn
       });
       assert.equal(lockBase.status, 409);
 
+      // Admin no puede finalizar manualmente una subasta -> 403, pero sí cancelarla -> 200
+      const adminFinalizeDenied = await fetch(`${baseUrl}/auctions/101`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({ status: 'finalizada' }),
+      });
+      assert.equal(adminFinalizeDenied.status, 403);
+
+      const adminCancelOk = await fetch(`${baseUrl}/auctions/101`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({ status: 'cancelada' }),
+      });
+      assert.equal(adminCancelOk.status, 200);
+      assert.equal((await adminCancelOk.json()).status, 'cancelada');
+
       // RN07: No se puede calificar subasta activa -> 409
       const revActive = await fetch(`${baseUrl}/reviews`, {
         method: 'POST',

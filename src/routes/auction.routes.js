@@ -4,7 +4,6 @@ import {
   getAuctionById,
   createAuction,
   updateAuction,
-  closeAuctionNow,
   deleteAuction,
 } from '../controllers/auction.controller.js';
 import { verifyToken, optionalAuth } from '../middlewares/auth.middleware.js';
@@ -20,7 +19,6 @@ router.get('/:id', validateParamId('id'), optionalAuth, getAuctionById);
 router.post('/', verifyToken, createAuction);
 router.put('/:id', validateParamId('id'), verifyToken, updateAuction);
 router.patch('/:id', validateParamId('id'), verifyToken, updateAuction);
-router.post('/:id/close', validateParamId('id'), verifyToken, closeAuctionNow);
 router.delete('/:id', validateParamId('id'), verifyToken, deleteAuction);
 
 export default router;

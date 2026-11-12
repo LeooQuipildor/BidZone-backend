@@ -278,17 +278,6 @@ export async function update(id, fields, connection) {
   return findById(id, connection);
 }
 
-export async function closeWithWinner(conn, id, winnerId) {
-  await query(
-    `UPDATE auctions
-     SET status = 'finalizada', winner_id = ?, end_time = UTC_TIMESTAMP()
-     WHERE id = ?`,
-    [winnerId ? Number(winnerId) : null, Number(id)],
-    conn
-  );
-  return findById(id, conn);
-}
-
 export async function remove(id, connection) {
   const result = await query(
     'DELETE FROM auctions WHERE id = ?',
