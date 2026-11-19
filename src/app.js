@@ -1,51 +1,28 @@
 import express from 'express';
 import cors from 'cors';
-import { env } from './config/env.js';
-import apiRoutes from './routes/index.js';
-import {
-  notFoundHandler,
-  errorHandler,
-} from './middlewares/error.middleware.js';
+import { entorno } from './config/entorno.js';
+import rutasApi from './rutas/index.js';
+import { rutaNoEncontrada, manejarErrores } from './middlewares/errores.middleware.js';
 
-export function createApp() {
-  const app = express();
+const app = express();
 
-  const allowedOrigins = env.corsOrigin
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
+// Permite peticiones desde el frontend (React en localhost:5173)
+const origenesPermitidos = entorno.origenCors.split(',').map((o) => o.trim()).filter(Boolean);
+app.use(cors({ origin: origenesPermitidos.includes('*') ? true : origenesPermitidos, credentials: true }));
 
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(null, false);
-        }
-      },
-      credentials: true,
-    })
-  );
+// Permite leer JSON en req.body
+app.use(express.json({ limit: '1mb' }));
 
-  app.use(express.json({ limit: '1mb' }));
+// Ruta raíz de bienvenida
+app.get('/', (_req, res) => {
+  res.status(200).json({ name: 'BidZone REST API', version: '1.0.0', docs: '/api/health' });
+});
 
-  app.get('/', (_req, res) => {
-    res.status(200).json({
-      name: 'BidZone REST API',
-      version: '1.0.0',
-      docs: '/api/health',
-    });
-  });
+// Todas las rutas de la API viven bajo /api
+app.use('/api', rutasApi);
 
-  app.use('/api', apiRoutes);
+// Manejo de rutas inexistentes (404) y errores generales
+app.use(rutaNoEncontrada);
+app.use(manejarErrores);
 
-  app.use(notFoundHandler);
-  app.use(errorHandler);
-
-  return app;
-}
-
-const app = createApp();
 export default app;
-

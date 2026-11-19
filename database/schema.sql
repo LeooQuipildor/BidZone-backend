@@ -1,7 +1,6 @@
 -- =============================================================================
--- BidZone · Script de Base de Datos Relacional MySQL 8.0+
--- Requisito 5: Mínimo 5 tablas relacionadas (implementadas 6 tablas en 3FN)
--- Reglas de Negocio soportadas: RN01 - RN08
+-- BidZone · Base de Datos Relacional MySQL 8.0+ (Tablas y columnas en español)
+-- 6 tablas relacionadas · Reglas de Negocio: RN01 - RN08
 -- =============================================================================
 
 CREATE DATABASE IF NOT EXISTS bidzone_db
@@ -10,194 +9,171 @@ CREATE DATABASE IF NOT EXISTS bidzone_db
 
 USE bidzone_db;
 
--- Eliminar tablas en orden inverso a sus dependencias si se reinicializa el esquema
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS notifications;
-DROP TABLE IF EXISTS reviews;
-DROP TABLE IF EXISTS reports;
-DROP TABLE IF EXISTS bids;
-DROP TABLE IF EXISTS auctions;
-DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS notificaciones;
+DROP TABLE IF EXISTS resenas;
+DROP TABLE IF EXISTS reportes;
+DROP TABLE IF EXISTS pujas;
+DROP TABLE IF EXISTS subastas;
+DROP TABLE IF EXISTS usuarios;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- -----------------------------------------------------------------------------
--- 1. Tabla: users
--- Cuentas de socios y administradores, credenciales hasheadas (bcrypt),
--- datos de contacto para trato directo (RN05) y estado disciplinario (RN06).
+-- 1. Tabla: usuarios
 -- -----------------------------------------------------------------------------
-CREATE TABLE users (
+CREATE TABLE usuarios (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  name VARCHAR(120) NOT NULL,
-  email VARCHAR(160) NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
-  phone VARCHAR(40) NOT NULL DEFAULT '',
-  city VARCHAR(120) NOT NULL DEFAULT '',
-  status ENUM('active', 'suspended', 'closed') NOT NULL DEFAULT 'active',
-  reputation DECIMAL(3, 2) NOT NULL DEFAULT 5.00,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  nombre VARCHAR(120) NOT NULL,
+  correo VARCHAR(160) NOT NULL,
+  contrasena_hash VARCHAR(255) NOT NULL,
+  rol ENUM('user', 'admin') NOT NULL DEFAULT 'user',
+  telefono VARCHAR(40) NOT NULL DEFAULT '',
+  ciudad VARCHAR(120) NOT NULL DEFAULT '',
+  estado ENUM('active', 'suspended', 'closed') NOT NULL DEFAULT 'active',
+  reputacion DECIMAL(3, 2) NOT NULL DEFAULT 5.00,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT pk_users PRIMARY KEY (id),
-  CONSTRAINT uq_users_email UNIQUE (email),
-  CONSTRAINT chk_users_reputation CHECK (reputation >= 1.00 AND reputation <= 5.00)
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_usuarios_correo (correo),
+  CONSTRAINT chk_usuarios_reputacion CHECK (reputacion >= 1.00 AND reputacion <= 5.00)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_users_role_status ON users (role, status);
+CREATE INDEX idx_usuarios_rol_estado ON usuarios (rol, estado);
 
 -- -----------------------------------------------------------------------------
--- 2. Tabla: auctions
--- Publicaciones/lotes en subasta. Referencia al vendedor (obligatorio) y al
--- postor ganador al finalizar el reloj (opcional hasta su adjudicación).
+-- 2. Tabla: subastas
 -- -----------------------------------------------------------------------------
-CREATE TABLE auctions (
+CREATE TABLE subastas (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  title VARCHAR(180) NOT NULL,
-  description TEXT NOT NULL,
-  category VARCHAR(80) NOT NULL DEFAULT 'Tecnología',
-  image_url VARCHAR(500) NOT NULL DEFAULT '',
-  base_price DECIMAL(12, 2) NOT NULL,
-  current_price DECIMAL(12, 2) NOT NULL,
-  min_increment DECIMAL(12, 2) NOT NULL,
-  seller_id INT UNSIGNED NOT NULL,
-  winner_id INT UNSIGNED NULL,
-  status ENUM('activa', 'finalizada', 'cancelada') NOT NULL DEFAULT 'activa',
-  end_time DATETIME NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  titulo VARCHAR(180) NOT NULL,
+  descripcion TEXT NOT NULL,
+  categoria VARCHAR(80) NOT NULL DEFAULT 'Tecnología',
+  url_imagen VARCHAR(500) NOT NULL DEFAULT '',
+  precio_base DECIMAL(12, 2) NOT NULL,
+  precio_actual DECIMAL(12, 2) NOT NULL,
+  incremento_minimo DECIMAL(12, 2) NOT NULL,
+  vendedor_id INT UNSIGNED NOT NULL,
+  ganador_id INT UNSIGNED NULL,
+  estado ENUM('activa', 'finalizada', 'cancelada') NOT NULL DEFAULT 'activa',
+  fecha_fin DATETIME NOT NULL,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT pk_auctions PRIMARY KEY (id),
-  CONSTRAINT fk_auctions_seller
-    FOREIGN KEY (seller_id) REFERENCES users(id)
+  PRIMARY KEY (id),
+  CONSTRAINT fk_subastas_vendedor FOREIGN KEY (vendedor_id) REFERENCES usuarios(id)
     ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT fk_auctions_winner
-    FOREIGN KEY (winner_id) REFERENCES users(id)
+  CONSTRAINT fk_subastas_ganador FOREIGN KEY (ganador_id) REFERENCES usuarios(id)
     ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT chk_auctions_prices CHECK (
-    base_price > 0 AND current_price >= base_price AND min_increment > 0
+  CONSTRAINT chk_subastas_precios CHECK (
+    precio_base > 0 AND precio_actual >= precio_base AND incremento_minimo > 0
   )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_auctions_status_end ON auctions (status, end_time);
-CREATE INDEX idx_auctions_category ON auctions (category);
-CREATE INDEX idx_auctions_seller ON auctions (seller_id);
-CREATE INDEX idx_auctions_winner ON auctions (winner_id);
+CREATE INDEX idx_subastas_estado_fin ON subastas (estado, fecha_fin);
+CREATE INDEX idx_subastas_categoria ON subastas (categoria);
+CREATE INDEX idx_subastas_vendedor ON subastas (vendedor_id);
+CREATE INDEX idx_subastas_ganador ON subastas (ganador_id);
 
 -- -----------------------------------------------------------------------------
--- 3. Tabla: bids
--- Historial auditable e irrevocable de ofertas vinculantes (RN01 - RN04).
+-- 3. Tabla: pujas (RN01 - RN04)
 -- -----------------------------------------------------------------------------
-CREATE TABLE bids (
+CREATE TABLE pujas (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  auction_id INT UNSIGNED NOT NULL,
-  bidder_id INT UNSIGNED NOT NULL,
-  amount DECIMAL(12, 2) NOT NULL,
-  note VARCHAR(300) NOT NULL DEFAULT '',
-  commitment_accepted TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  subasta_id INT UNSIGNED NOT NULL,
+  postor_id INT UNSIGNED NOT NULL,
+  monto DECIMAL(12, 2) NOT NULL,
+  nota VARCHAR(300) NOT NULL DEFAULT '',
+  compromiso_aceptado TINYINT(1) NOT NULL DEFAULT 1,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT pk_bids PRIMARY KEY (id),
-  CONSTRAINT fk_bids_auction
-    FOREIGN KEY (auction_id) REFERENCES auctions(id)
+  PRIMARY KEY (id),
+  CONSTRAINT fk_pujas_subasta FOREIGN KEY (subasta_id) REFERENCES subastas(id)
     ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_bids_bidder
-    FOREIGN KEY (bidder_id) REFERENCES users(id)
+  CONSTRAINT fk_pujas_postor FOREIGN KEY (postor_id) REFERENCES usuarios(id)
     ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT chk_bids_amount CHECK (amount > 0),
-  CONSTRAINT chk_bids_commitment CHECK (commitment_accepted = 1)
+  CONSTRAINT chk_pujas_monto CHECK (monto > 0),
+  CONSTRAINT chk_pujas_compromiso CHECK (compromiso_aceptado = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_bids_auction_amount ON bids (auction_id, amount DESC);
-CREATE INDEX idx_bids_bidder ON bids (bidder_id);
+CREATE INDEX idx_pujas_subasta_monto ON pujas (subasta_id, monto DESC);
+CREATE INDEX idx_pujas_postor ON pujas (postor_id);
 
 -- -----------------------------------------------------------------------------
--- 4. Tabla: reports
--- Expedientes de mediación por incumplimiento de pago o entrega (RN06).
+-- 4. Tabla: reportes (RN06)
 -- -----------------------------------------------------------------------------
-CREATE TABLE reports (
+CREATE TABLE reportes (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  auction_id INT UNSIGNED NOT NULL,
-  reporter_id INT UNSIGNED NOT NULL,
-  reported_user_id INT UNSIGNED NOT NULL,
-  reason VARCHAR(180) NOT NULL,
-  description TEXT NOT NULL,
-  evidence_url VARCHAR(500) NOT NULL DEFAULT '',
-  status ENUM('en_revision', 'resuelto_sancion', 'desestimado') NOT NULL DEFAULT 'en_revision',
-  sanction_applied VARCHAR(255) NOT NULL DEFAULT 'Pendiente de evaluación',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  subasta_id INT UNSIGNED NOT NULL,
+  denunciante_id INT UNSIGNED NOT NULL,
+  denunciado_id INT UNSIGNED NOT NULL,
+  motivo VARCHAR(180) NOT NULL,
+  descripcion TEXT NOT NULL,
+  url_evidencia VARCHAR(500) NOT NULL DEFAULT '',
+  estado ENUM('en_revision', 'resuelto_sancion', 'desestimado') NOT NULL DEFAULT 'en_revision',
+  sancion_aplicada VARCHAR(255) NOT NULL DEFAULT 'Pendiente de evaluación',
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT pk_reports PRIMARY KEY (id),
-  CONSTRAINT fk_reports_auction
-    FOREIGN KEY (auction_id) REFERENCES auctions(id)
+  PRIMARY KEY (id),
+  CONSTRAINT fk_reportes_subasta FOREIGN KEY (subasta_id) REFERENCES subastas(id)
     ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_reports_reporter
-    FOREIGN KEY (reporter_id) REFERENCES users(id)
+  CONSTRAINT fk_reportes_denunciante FOREIGN KEY (denunciante_id) REFERENCES usuarios(id)
     ON DELETE RESTRICT,
-  CONSTRAINT fk_reports_reported_user
-    FOREIGN KEY (reported_user_id) REFERENCES users(id)
+  CONSTRAINT fk_reportes_denunciado FOREIGN KEY (denunciado_id) REFERENCES usuarios(id)
     ON DELETE RESTRICT,
-  CONSTRAINT chk_reports_distinct_users CHECK (reporter_id <> reported_user_id)
+  CONSTRAINT chk_reportes_distintos CHECK (denunciante_id <> denunciado_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_reports_status ON reports (status);
-CREATE INDEX idx_reports_auction ON reports (auction_id);
+CREATE INDEX idx_reportes_estado ON reportes (estado);
+CREATE INDEX idx_reportes_subasta ON reportes (subasta_id);
 
 -- -----------------------------------------------------------------------------
--- 5. Tabla: reviews
--- Calificaciones mutuas de 1 a 5 estrellas tras el cierre formal (RN07).
--- Garantiza una única reseña por usuario y subasta mediante clave única.
+-- 5. Tabla: resenas (RN07)
 -- -----------------------------------------------------------------------------
-CREATE TABLE reviews (
+CREATE TABLE resenas (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  auction_id INT UNSIGNED NOT NULL,
-  reviewer_id INT UNSIGNED NOT NULL,
-  target_user_id INT UNSIGNED NOT NULL,
-  rating TINYINT UNSIGNED NOT NULL,
-  comment TEXT NOT NULL,
-  role_context ENUM('comprador_a_vendedor', 'vendedor_a_comprador') NOT NULL DEFAULT 'comprador_a_vendedor',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  subasta_id INT UNSIGNED NOT NULL,
+  autor_id INT UNSIGNED NOT NULL,
+  calificado_id INT UNSIGNED NOT NULL,
+  puntaje TINYINT UNSIGNED NOT NULL,
+  comentario TEXT NOT NULL,
+  contexto_rol ENUM('comprador_a_vendedor', 'vendedor_a_comprador') NOT NULL DEFAULT 'comprador_a_vendedor',
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT pk_reviews PRIMARY KEY (id),
-  CONSTRAINT uq_reviews_auction_reviewer UNIQUE (auction_id, reviewer_id),
-  CONSTRAINT fk_reviews_auction
-    FOREIGN KEY (auction_id) REFERENCES auctions(id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_resenas_subasta_autor (subasta_id, autor_id),
+  CONSTRAINT fk_resenas_subasta FOREIGN KEY (subasta_id) REFERENCES subastas(id)
     ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_reviews_reviewer
-    FOREIGN KEY (reviewer_id) REFERENCES users(id)
+  CONSTRAINT fk_resenas_autor FOREIGN KEY (autor_id) REFERENCES usuarios(id)
     ON DELETE RESTRICT,
-  CONSTRAINT fk_reviews_target
-    FOREIGN KEY (target_user_id) REFERENCES users(id)
+  CONSTRAINT fk_resenas_calificado FOREIGN KEY (calificado_id) REFERENCES usuarios(id)
     ON DELETE RESTRICT,
-  CONSTRAINT chk_reviews_rating CHECK (rating BETWEEN 1 AND 5),
-  CONSTRAINT chk_reviews_distinct_users CHECK (reviewer_id <> target_user_id)
+  CONSTRAINT chk_resenas_puntaje CHECK (puntaje BETWEEN 1 AND 5),
+  CONSTRAINT chk_resenas_distintos CHECK (autor_id <> calificado_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_reviews_target ON reviews (target_user_id);
+CREATE INDEX idx_resenas_calificado ON resenas (calificado_id);
 
 -- -----------------------------------------------------------------------------
--- 6. Tabla: notifications
--- Alertas generadas al superar pujas, ganar una subasta o recibir un reporte.
+-- 6. Tabla: notificaciones
 -- -----------------------------------------------------------------------------
-CREATE TABLE notifications (
+CREATE TABLE notificaciones (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id INT UNSIGNED NOT NULL,
-  auction_id INT UNSIGNED NULL,
-  title VARCHAR(180) NOT NULL,
-  message TEXT NOT NULL,
-  type ENUM('outbid', 'won', 'closed', 'report', 'system') NOT NULL DEFAULT 'system',
-  is_read TINYINT(1) NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  usuario_id INT UNSIGNED NOT NULL,
+  subasta_id INT UNSIGNED NULL,
+  titulo VARCHAR(180) NOT NULL,
+  mensaje TEXT NOT NULL,
+  tipo ENUM('outbid', 'won', 'closed', 'report', 'system') NOT NULL DEFAULT 'system',
+  leida TINYINT(1) NOT NULL DEFAULT 0,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT pk_notifications PRIMARY KEY (id),
-  CONSTRAINT fk_notifications_user
-    FOREIGN KEY (user_id) REFERENCES users(id)
+  PRIMARY KEY (id),
+  CONSTRAINT fk_notificaciones_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
     ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_notifications_auction
-    FOREIGN KEY (auction_id) REFERENCES auctions(id)
+  CONSTRAINT fk_notificaciones_subasta FOREIGN KEY (subasta_id) REFERENCES subastas(id)
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX idx_notifications_user_read ON notifications (user_id, is_read, created_at);
-
+CREATE INDEX idx_notificaciones_usuario_leida ON notificaciones (usuario_id, leida, creado_en);
