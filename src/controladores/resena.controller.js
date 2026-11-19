@@ -16,21 +16,21 @@ function validarEstrellas(valor) {
 
 // GET /api/resenas - Lista calificaciones con filtros opcionales
 export const listarResenas = atraparErrores(async (req, res) => {
-  const { auctionId, targetUserId, reviewerId } = req.query;
+  const { subastaId, calificadoId, autorId } = req.query;
 
-  const idSubasta = auctionId ? leerIdPositivo(auctionId) : undefined;
-  if (auctionId && !idSubasta) throw new ErrorApi(400, 'auctionId debe ser un número positivo.');
+  const idSubasta = subastaId ? leerIdPositivo(subastaId) : undefined;
+  if (subastaId && !idSubasta) throw new ErrorApi(400, 'subastaId debe ser un número positivo.');
 
-  const idCalificado = targetUserId ? leerIdPositivo(targetUserId) : undefined;
-  if (targetUserId && !idCalificado) throw new ErrorApi(400, 'targetUserId debe ser un número positivo.');
+  const idCalificado = calificadoId ? leerIdPositivo(calificadoId) : undefined;
+  if (calificadoId && !idCalificado) throw new ErrorApi(400, 'calificadoId debe ser un número positivo.');
 
-  const idAutor = reviewerId ? leerIdPositivo(reviewerId) : undefined;
-  if (reviewerId && !idAutor) throw new ErrorApi(400, 'reviewerId debe ser un número positivo.');
+  const idAutor = autorId ? leerIdPositivo(autorId) : undefined;
+  if (autorId && !idAutor) throw new ErrorApi(400, 'autorId debe ser un número positivo.');
 
   const resenas = await modeloResena.listarTodas({
-    auctionId: idSubasta,
-    targetUserId: idCalificado,
-    reviewerId: idAutor,
+    subastaId: idSubasta,
+    calificadoId: idCalificado,
+    autorId: idAutor,
   });
   res.status(200).json(resenas);
 });
@@ -45,66 +45,66 @@ export const obtenerResena = atraparErrores(async (req, res) => {
 
 // POST /api/resenas - Registra calificación única post-cierre y recalcula reputación (RN07)
 export const crearResena = atraparErrores(async (req, res) => {
-  exigirCampos(req.body, ['auctionId', 'rating']);
+  exigirCampos(req.body, ['subastaId', 'puntaje']);
 
-  const idSubasta = leerIdPositivo(req.body.auctionId);
-  if (!idSubasta) throw new ErrorApi(400, 'auctionId debe ser un número positivo.');
+  const subastaId = leerIdPositivo(req.body.subastaId);
+  if (!subastaId) throw new ErrorApi(400, 'subastaId debe ser un número positivo.');
 
-  const puntaje = validarEstrellas(req.body.rating);
-  const comentario = req.body.comment ? String(req.body.comment).trim() : '';
+  const puntaje = validarEstrellas(req.body.puntaje);
+  const comentario = req.body.comentario ? String(req.body.comentario).trim() : '';
 
   const creada = await ejecutarTransaccion(async (conexion) => {
-    const subasta = await modeloSubasta.buscarPorId(idSubasta, conexion);
+    const subasta = await modeloSubasta.buscarPorId(subastaId, conexion);
     if (!subasta) throw new ErrorApi(404, 'Subasta no encontrada.');
 
     // RN07: Solo se califica cuando la subasta finalizó con ganador
-    if (subasta.status !== 'finalizada') {
+    if (subasta.estado !== 'finalizada') {
       throw new ErrorApi(409, 'RN07: Solo se pueden calificar subastas finalizadas.');
     }
-    if (!subasta.winnerId) {
+    if (!subasta.ganadorId) {
       throw new ErrorApi(409, 'RN07: Esta subasta finalizó sin ganador.');
     }
 
-    const esAdmin = req.usuario.role === 'admin';
-    const esGanador = Number(req.usuario.id) === Number(subasta.winnerId);
-    const esVendedor = Number(req.usuario.id) === Number(subasta.sellerId);
+    const esAdmin = req.usuario.rol === 'admin';
+    const esGanador = Number(req.usuario.id) === Number(subasta.ganadorId);
+    const esVendedor = Number(req.usuario.id) === Number(subasta.vendedorId);
 
-    let idCalificado;
+    let calificadoId;
     let contextoRol;
 
     if (esGanador) {
-      idCalificado = subasta.sellerId;
+      calificadoId = subasta.vendedorId;
       contextoRol = 'comprador_a_vendedor';
     } else if (esVendedor) {
-      idCalificado = subasta.winnerId;
+      calificadoId = subasta.ganadorId;
       contextoRol = 'vendedor_a_comprador';
     } else if (esAdmin) {
-      idCalificado = leerIdPositivo(req.body.targetUserId);
-      if (!idCalificado || idCalificado === Number(req.usuario.id)) {
-        throw new ErrorApi(400, 'Debes indicar un targetUserId válido.');
+      calificadoId = leerIdPositivo(req.body.calificadoId);
+      if (!calificadoId || calificadoId === Number(req.usuario.id)) {
+        throw new ErrorApi(400, 'Debes indicar un calificadoId válido.');
       }
-      contextoRol = req.body.roleContext
-        ? exigirValorPermitido(req.body.roleContext, CONTEXTOS_ROL, 'roleContext')
+      contextoRol = req.body.contextoRol
+        ? exigirValorPermitido(req.body.contextoRol, CONTEXTOS_ROL, 'contextoRol')
         : 'comprador_a_vendedor';
     } else {
       throw new ErrorApi(403, 'RN07: Solo el vendedor o el ganador pueden calificar esta operación.');
     }
 
     // RN07: Una sola reseña por persona y subasta
-    if (await modeloResena.yaCalifico(conexion, idSubasta, req.usuario.id)) {
+    if (await modeloResena.yaCalifico(conexion, subastaId, req.usuario.id)) {
       throw new ErrorApi(409, 'RN07: Ya calificaste esta subasta.');
     }
 
     const resena = await modeloResena.crear(conexion, {
-      auctionId: idSubasta,
-      reviewerId: req.usuario.id,
-      targetUserId: idCalificado,
-      rating: puntaje,
-      comment: comentario,
-      roleContext: contextoRol,
+      subastaId,
+      autorId: req.usuario.id,
+      calificadoId,
+      puntaje,
+      comentario,
+      contextoRol,
     });
 
-    await modeloResena.recalcularReputacion(conexion, idCalificado);
+    await modeloResena.recalcularReputacion(conexion, calificadoId);
     return resena;
   });
 
@@ -119,19 +119,19 @@ export const actualizarResena = atraparErrores(async (req, res) => {
     const actual = await modeloResena.buscarPorId(id, conexion);
     if (!actual) throw new ErrorApi(404, 'Calificación no encontrada.');
 
-    const esAdmin = req.usuario.role === 'admin';
-    const esAutor = Number(actual.reviewerId) === Number(req.usuario.id);
+    const esAdmin = req.usuario.rol === 'admin';
+    const esAutor = Number(actual.autorId) === Number(req.usuario.id);
     if (!esAdmin && !esAutor) throw new ErrorApi(403, 'Solo el autor o un administrador puede editarla.');
 
     const cambios = {};
-    if (req.body.rating !== undefined) cambios.rating = validarEstrellas(req.body.rating);
-    if (req.body.comment !== undefined) cambios.comment = String(req.body.comment).trim();
-    if (esAdmin && req.body.roleContext !== undefined) {
-      cambios.roleContext = exigirValorPermitido(req.body.roleContext, CONTEXTOS_ROL, 'roleContext');
+    if (req.body.puntaje !== undefined) cambios.puntaje = validarEstrellas(req.body.puntaje);
+    if (req.body.comentario !== undefined) cambios.comentario = String(req.body.comentario).trim();
+    if (esAdmin && req.body.contextoRol !== undefined) {
+      cambios.contextoRol = exigirValorPermitido(req.body.contextoRol, CONTEXTOS_ROL, 'contextoRol');
     }
 
     const guardada = await modeloResena.actualizar(conexion, id, cambios);
-    await modeloResena.recalcularReputacion(conexion, actual.targetUserId);
+    await modeloResena.recalcularReputacion(conexion, actual.calificadoId);
     return guardada;
   });
 
@@ -146,13 +146,13 @@ export const eliminarResena = atraparErrores(async (req, res) => {
     const actual = await modeloResena.buscarPorId(id, conexion);
     if (!actual) throw new ErrorApi(404, 'Calificación no encontrada.');
 
-    const esAdmin = req.usuario.role === 'admin';
-    const esAutor = Number(actual.reviewerId) === Number(req.usuario.id);
+    const esAdmin = req.usuario.rol === 'admin';
+    const esAutor = Number(actual.autorId) === Number(req.usuario.id);
     if (!esAdmin && !esAutor) throw new ErrorApi(403, 'Solo el autor o un administrador puede eliminarla.');
 
     await modeloResena.eliminar(conexion, id);
-    await modeloResena.recalcularReputacion(conexion, actual.targetUserId);
+    await modeloResena.recalcularReputacion(conexion, actual.calificadoId);
   });
 
-  res.status(200).json({ message: 'Calificación eliminada y reputación recalculada.', id });
+  res.status(200).json({ mensaje: 'Calificación eliminada y reputación recalculada.', id });
 });

@@ -44,7 +44,7 @@ test('El esquema SQL en español tiene 6 tablas y la semilla carga 25 usuarios y
   assert.equal(subastasSeed.length, 50, 'La semilla debe tener exactamente 50 subastas (101 a 150)');
 });
 
-test('formatearUsuario mapea columnas en español y nunca devuelve contrasena_hash', () => {
+test('formatearUsuario devuelve claves en español y nunca expone contrasena_hash', () => {
   const usuario = formatearUsuario({
     id: 1,
     nombre: 'Admin',
@@ -53,16 +53,16 @@ test('formatearUsuario mapea columnas en español y nunca devuelve contrasena_ha
     rol: 'admin',
     telefono: '123',
     ciudad: 'Tucumán',
-    estado: 'active',
+    estado: 'activa',
     reputacion: '4.90',
     creado_en: '2026-10-01 10:00:00',
     actualizado_en: '2026-10-01 10:00:00',
   });
 
   assert.equal('contrasena_hash' in usuario, false);
-  assert.equal('passwordHash' in usuario, false);
-  assert.equal(usuario.name, 'Admin');
-  assert.equal(usuario.reputation, 4.9);
+  assert.equal('contrasenaHash' in usuario, false);
+  assert.equal(usuario.nombre, 'Admin');
+  assert.equal(usuario.reputacion, 4.9);
 });
 
 test('Utilidades de fecha, token y validación funcionan correctamente', () => {
@@ -73,10 +73,10 @@ test('Utilidades de fecha, token y validación funcionan correctamente', () => {
   assert.equal(leerIdPositivo('15'), 15);
   assert.equal(leerIdPositivo('abc'), null);
 
-  const token = crearToken({ id: 7, role: 'user', email: 'socio@bidzone.com' });
+  const token = crearToken({ id: 7, rol: 'usuario', correo: 'socio@bidzone.com' });
   const datos = verificarJwt(token);
   assert.equal(datos.id, 7);
-  assert.equal(datos.role, 'user');
+  assert.equal(datos.rol, 'usuario');
 });
 
 test('La API responde correctamente a raíz, rutas privadas sin token, JSON inválido y 404', async () => {
@@ -90,10 +90,10 @@ test('La API responde correctamente a raíz, rutas privadas sin token, JSON inv�
     const resIdMalo = await fetch(`${urlBase}/api/subastas/abc`);
     assert.equal(resIdMalo.status, 400);
 
-    const resJsonMalo = await fetch(`${urlBase}/api/autenticacion/login`, {
+    const resJsonMalo = await fetch(`${urlBase}/api/autenticacion/iniciar-sesion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: '{"email": roto',
+      body: '{"correo": roto',
     });
     assert.equal(resJsonMalo.status, 400);
 

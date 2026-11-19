@@ -25,7 +25,7 @@ export async function verificarToken(req, _res, next) {
       return next(new ErrorApi(401, 'El usuario de esta sesión ya no existe.'));
     }
 
-    if (usuario.status !== 'active') {
+    if (usuario.estado !== 'activa') {
       return next(new ErrorApi(403, 'RN06: Esta cuenta está suspendida o cerrada.'));
     }
 
@@ -46,7 +46,7 @@ export async function autenticacionOpcional(req, _res, next) {
   try {
     const datosToken = verificarJwt(token);
     const usuario = await modeloUsuario.buscarPorId(datosToken.id);
-    req.usuario = usuario && usuario.status === 'active' ? usuario : null;
+    req.usuario = usuario && usuario.estado === 'activa' ? usuario : null;
   } catch {
     req.usuario = null;
   }
@@ -59,7 +59,7 @@ export function exigirRol(...rolesPermitidos) {
     if (!req.usuario) {
       return next(new ErrorApi(401, 'Debes iniciar sesión para continuar.'));
     }
-    if (!rolesPermitidos.includes(req.usuario.role)) {
+    if (!rolesPermitidos.includes(req.usuario.rol)) {
       return next(new ErrorApi(403, 'No tienes permisos para realizar esta acción.'));
     }
     return next();

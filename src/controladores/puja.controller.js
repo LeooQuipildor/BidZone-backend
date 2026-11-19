@@ -7,15 +7,15 @@ import { aFechaIso } from '../utilidades/fecha.js';
 
 // GET /api/pujas - Lista pujas filtrando por subasta o postor
 export const listarPujas = atraparErrores(async (req, res) => {
-  const { auctionId, bidderId } = req.query;
+  const { subastaId, postorId } = req.query;
 
-  const idSubasta = auctionId ? leerIdPositivo(auctionId) : undefined;
-  if (auctionId && !idSubasta) throw new ErrorApi(400, 'auctionId debe ser un número positivo.');
+  const idSubasta = subastaId ? leerIdPositivo(subastaId) : undefined;
+  if (subastaId && !idSubasta) throw new ErrorApi(400, 'subastaId debe ser un número positivo.');
 
-  const idPostor = bidderId ? leerIdPositivo(bidderId) : undefined;
-  if (bidderId && !idPostor) throw new ErrorApi(400, 'bidderId debe ser un número positivo.');
+  const idPostor = postorId ? leerIdPositivo(postorId) : undefined;
+  if (postorId && !idPostor) throw new ErrorApi(400, 'postorId debe ser un número positivo.');
 
-  const pujas = await modeloPuja.listarTodas({ auctionId: idSubasta, bidderId: idPostor });
+  const pujas = await modeloPuja.listarTodas({ subastaId: idSubasta, postorId: idPostor });
   res.status(200).json(pujas);
 });
 
@@ -29,23 +29,23 @@ export const obtenerPuja = atraparErrores(async (req, res) => {
 
 // POST /api/pujas - Registra una oferta nueva validando RN01, RN02, RN03 y RN04
 export const crearPuja = atraparErrores(async (req, res) => {
-  exigirCampos(req.body, ['auctionId', 'amount']);
+  exigirCampos(req.body, ['subastaId', 'monto']);
 
-  const idSubasta = leerIdPositivo(req.body.auctionId);
-  if (!idSubasta) throw new ErrorApi(400, 'auctionId debe ser un número positivo.');
+  const subastaId = leerIdPositivo(req.body.subastaId);
+  if (!subastaId) throw new ErrorApi(400, 'subastaId debe ser un número positivo.');
 
-  const monto = exigirNumeroPositivo(req.body.amount, 'amount');
+  const monto = exigirNumeroPositivo(req.body.monto, 'monto');
 
   // RN04: El postor debe aceptar el compromiso vinculante de compra
-  if (req.body.commitmentAccepted !== true) {
+  if (req.body.compromisoAceptado !== true) {
     throw new ErrorApi(400, 'RN04: Debes aceptar el compromiso vinculante de compra.');
   }
 
-  const nota = req.body.note ? String(req.body.note).trim() : 'Compromiso de pago y retiro acordado.';
+  const nota = req.body.nota ? String(req.body.nota).trim() : 'Compromiso de pago y retiro acordado.';
   await modeloSubasta.cerrarSubastasVencidas();
 
   const pujaCreada = await ejecutarTransaccion(async (conexion) => {
-    const subasta = await modeloSubasta.buscarParaBloquear(conexion, idSubasta);
+    const subasta = await modeloSubasta.buscarParaBloquear(conexion, subastaId);
     if (!subasta) throw new ErrorApi(404, 'La subasta no existe.');
 
     // RN02: El vendedor no puede pujar en su propia subasta
@@ -65,23 +65,23 @@ export const crearPuja = atraparErrores(async (req, res) => {
       throw new ErrorApi(400, `RN01: La oferta mínima es $${minimo.toLocaleString('es-AR')}.`);
     }
 
-    const liderAnterior = await modeloPuja.buscarOfertaLider(conexion, idSubasta);
+    const liderAnterior = await modeloPuja.buscarOfertaLider(conexion, subastaId);
     const nuevaPuja = await modeloPuja.crear(conexion, {
-      auctionId: idSubasta,
-      bidderId: req.usuario.id,
-      amount: monto,
-      note: nota,
+      subastaId,
+      postorId: req.usuario.id,
+      monto,
+      nota,
     });
 
-    await consultar('UPDATE subastas SET precio_actual = ? WHERE id = ?', [monto, idSubasta], conexion);
+    await consultar('UPDATE subastas SET precio_actual = ? WHERE id = ?', [monto, subastaId], conexion);
 
     // Avisa al postor anterior que su oferta fue superada
-    if (liderAnterior && Number(liderAnterior.bidderId) !== Number(req.usuario.id)) {
+    if (liderAnterior && Number(liderAnterior.postorId) !== Number(req.usuario.id)) {
       await consultar(
-        `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'outbid')`,
+        `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'superada')`,
         [
-          liderAnterior.bidderId,
-          idSubasta,
+          liderAnterior.postorId,
+          subastaId,
           '¡Oferta superada!',
           `Tu oferta en "${subasta.titulo}" fue superada con $${monto.toLocaleString('es-AR')}.`,
         ],
@@ -103,23 +103,23 @@ export const actualizarPuja = atraparErrores(async (req, res) => {
     const actual = await modeloPuja.buscarPorId(id, conexion);
     if (!actual) throw new ErrorApi(404, 'Puja no encontrada.');
 
-    const esAdmin = req.usuario.role === 'admin';
-    const esDueno = Number(actual.bidderId) === Number(req.usuario.id);
+    const esAdmin = req.usuario.rol === 'admin';
+    const esDueno = Number(actual.postorId) === Number(req.usuario.id);
     if (!esAdmin && !esDueno) throw new ErrorApi(403, 'No tienes permisos para editar esta puja.');
 
-    if (!esAdmin && req.body.amount !== undefined && Number(req.body.amount) !== Number(actual.amount)) {
+    if (!esAdmin && req.body.monto !== undefined && Number(req.body.monto) !== Number(actual.monto)) {
       throw new ErrorApi(403, 'RN04: El monto de una puja es irrevocable. Solo puedes editar la nota.');
     }
 
     const cambios = {};
-    if (esAdmin && req.body.amount !== undefined) {
-      cambios.amount = exigirNumeroPositivo(req.body.amount, 'amount');
+    if (esAdmin && req.body.monto !== undefined) {
+      cambios.monto = exigirNumeroPositivo(req.body.monto, 'monto');
     }
-    if (req.body.note !== undefined) cambios.note = String(req.body.note).trim();
+    if (req.body.nota !== undefined) cambios.nota = String(req.body.nota).trim();
 
     const guardada = await modeloPuja.actualizar(conexion, id, cambios);
-    if (esAdmin && cambios.amount !== undefined) {
-      await modeloPuja.recalcularPrecioSubasta(conexion, actual.auctionId);
+    if (esAdmin && cambios.monto !== undefined) {
+      await modeloPuja.recalcularPrecioSubasta(conexion, actual.subastaId);
     }
     return guardada;
   });
@@ -130,7 +130,7 @@ export const actualizarPuja = atraparErrores(async (req, res) => {
 // DELETE /api/pujas/:id - Elimina una puja y recalcula precio (solo administrador)
 export const eliminarPuja = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
-  if (req.usuario.role !== 'admin') {
+  if (req.usuario.rol !== 'admin') {
     throw new ErrorApi(403, 'RN04: Un postor no puede anular sus pujas.');
   }
 
@@ -138,8 +138,8 @@ export const eliminarPuja = atraparErrores(async (req, res) => {
     const actual = await modeloPuja.buscarPorId(id, conexion);
     if (!actual) throw new ErrorApi(404, 'Puja no encontrada.');
     await modeloPuja.eliminar(conexion, id);
-    await modeloPuja.recalcularPrecioSubasta(conexion, actual.auctionId);
+    await modeloPuja.recalcularPrecioSubasta(conexion, actual.subastaId);
   });
 
-  res.status(200).json({ message: 'Puja eliminada y precio recalculado.', id });
+  res.status(200).json({ mensaje: 'Puja eliminada y precio recalculado.', id });
 });

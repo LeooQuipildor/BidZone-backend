@@ -2,35 +2,35 @@ import { consultar, ejecutarTransaccion } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
 const ORDENES_SQL = {
-  endingSoon: "s.estado = 'activa' DESC, s.fecha_fin ASC, s.id DESC",
-  priceAsc: 's.precio_actual ASC, s.id DESC',
-  priceDesc: 's.precio_actual DESC, s.id DESC',
-  newest: 's.creado_en DESC, s.id DESC',
+  proximasACerrar: "s.estado = 'activa' DESC, s.fecha_fin ASC, s.id DESC",
+  precioAsc: 's.precio_actual ASC, s.id DESC',
+  precioDesc: 's.precio_actual DESC, s.id DESC',
+  masRecientes: 's.creado_en DESC, s.id DESC',
 };
 
-// Convierte una fila SQL de subasta al formato JSON que usa el frontend
+// Convierte una fila SQL de subasta al objeto JSON en español
 export function formatearSubasta(fila) {
   if (!fila) return null;
   return {
     id: Number(fila.id),
-    title: fila.titulo,
-    description: fila.descripcion,
-    category: fila.categoria,
-    imageUrl: fila.url_imagen,
-    basePrice: Number(fila.precio_base),
-    currentPrice: Number(fila.precio_actual),
-    minIncrement: Number(fila.incremento_minimo),
-    sellerId: Number(fila.vendedor_id),
-    winnerId: fila.ganador_id != null ? Number(fila.ganador_id) : null,
-    status: fila.estado,
-    endTime: aFechaIso(fila.fecha_fin),
-    createdAt: aFechaIso(fila.creado_en),
-    updatedAt: aFechaIso(fila.actualizado_en),
-    bidCount: fila.cantidad_pujas !== undefined ? Number(fila.cantidad_pujas) : undefined,
-    sellerName: fila.vendedor_nombre ?? undefined,
-    sellerCity: fila.vendedor_ciudad ?? undefined,
-    sellerReputation: fila.vendedor_reputacion !== undefined ? Number(fila.vendedor_reputacion) : undefined,
-    winnerName: fila.ganador_nombre ?? undefined,
+    titulo: fila.titulo,
+    descripcion: fila.descripcion,
+    categoria: fila.categoria,
+    urlImagen: fila.url_imagen,
+    precioBase: Number(fila.precio_base),
+    precioActual: Number(fila.precio_actual),
+    incrementoMinimo: Number(fila.incremento_minimo),
+    vendedorId: Number(fila.vendedor_id),
+    ganadorId: fila.ganador_id != null ? Number(fila.ganador_id) : null,
+    estado: fila.estado,
+    fechaFin: aFechaIso(fila.fecha_fin),
+    creadoEn: aFechaIso(fila.creado_en),
+    actualizadoEn: aFechaIso(fila.actualizado_en),
+    cantidadPujas: fila.cantidad_pujas !== undefined ? Number(fila.cantidad_pujas) : undefined,
+    nombreVendedor: fila.vendedor_nombre ?? undefined,
+    ciudadVendedor: fila.vendedor_ciudad ?? undefined,
+    reputacionVendedor: fila.vendedor_reputacion !== undefined ? Number(fila.vendedor_reputacion) : undefined,
+    nombreGanador: fila.ganador_nombre ?? undefined,
   };
 }
 
@@ -64,12 +64,12 @@ export async function cerrarSubastasVencidas() {
 
       if (ganadorId) {
         await consultar(
-          `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'won')`,
+          `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'ganada')`,
           [ganadorId, subasta.id, '¡Subasta ganada! Contacto liberado', `Ganaste "${subasta.titulo}".`],
           conexion
         );
         await consultar(
-          `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'closed')`,
+          `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'cerrada')`,
           [subasta.vendedor_id, subasta.id, 'Subasta finalizada con ganador', `Tu subasta "${subasta.titulo}" ya tiene ganador.`],
           conexion
         );
@@ -80,30 +80,30 @@ export async function cerrarSubastasVencidas() {
 }
 
 // Lista todas las subastas con filtros opcionales y ordenamiento
-export async function listarTodas({ category, status, search, sellerId, sortBy = 'endingSoon' } = {}) {
+export async function listarTodas({ categoria, estado, busqueda, vendedorId, ordenarPor = 'proximasACerrar' } = {}) {
   const filtros = [];
   const valores = [];
 
-  if (category && category !== 'Todas') {
+  if (categoria && categoria !== 'Todas') {
     filtros.push('s.categoria = ?');
-    valores.push(category);
+    valores.push(categoria);
   }
-  if (status && status !== 'todas') {
+  if (estado && estado !== 'todas') {
     filtros.push('s.estado = ?');
-    valores.push(status);
+    valores.push(estado);
   }
-  if (sellerId) {
+  if (vendedorId) {
     filtros.push('s.vendedor_id = ?');
-    valores.push(Number(sellerId));
+    valores.push(Number(vendedorId));
   }
-  if (search && String(search).trim() !== '') {
-    const patron = `%${String(search).trim()}%`;
+  if (busqueda && String(busqueda).trim() !== '') {
+    const patron = `%${String(busqueda).trim()}%`;
     filtros.push('(s.titulo LIKE ? OR s.descripcion LIKE ? OR s.categoria LIKE ?)');
     valores.push(patron, patron, patron);
   }
 
   const where = filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
-  const orden = ORDENES_SQL[sortBy] || ORDENES_SQL.endingSoon;
+  const orden = ORDENES_SQL[ordenarPor] || ORDENES_SQL.proximasACerrar;
 
   const filas = await consultar(
     `SELECT s.*, v.nombre AS vendedor_nombre, v.ciudad AS vendedor_ciudad, v.reputacion AS vendedor_reputacion,
@@ -159,15 +159,15 @@ export async function crear(datos) {
     `INSERT INTO subastas (titulo, descripcion, categoria, url_imagen, precio_base, precio_actual, incremento_minimo, vendedor_id, ganador_id, estado, fecha_fin)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'activa', ?)`,
     [
-      datos.title,
-      datos.description || '',
-      datos.category || 'Tecnología',
-      datos.imageUrl || '',
-      Number(datos.basePrice),
-      Number(datos.basePrice),
-      Number(datos.minIncrement),
-      Number(datos.sellerId),
-      datos.endTime,
+      datos.titulo,
+      datos.descripcion || '',
+      datos.categoria || 'Tecnología',
+      datos.urlImagen || '',
+      Number(datos.precioBase),
+      Number(datos.precioBase),
+      Number(datos.incrementoMinimo),
+      Number(datos.vendedorId),
+      datos.fechaFin,
     ]
   );
   return buscarPorId(resultado.insertId);
@@ -176,9 +176,15 @@ export async function crear(datos) {
 // Actualiza los campos modificados de una subasta
 export async function actualizar(id, campos) {
   const mapa = {
-    title: 'titulo', description: 'descripcion', category: 'categoria', imageUrl: 'url_imagen',
-    basePrice: 'precio_base', currentPrice: 'precio_actual', minIncrement: 'incremento_minimo',
-    status: 'estado', endTime: 'fecha_fin',
+    titulo: 'titulo',
+    descripcion: 'descripcion',
+    categoria: 'categoria',
+    urlImagen: 'url_imagen',
+    precioBase: 'precio_base',
+    precioActual: 'precio_actual',
+    incrementoMinimo: 'incremento_minimo',
+    estado: 'estado',
+    fechaFin: 'fecha_fin',
   };
 
   const partes = [];

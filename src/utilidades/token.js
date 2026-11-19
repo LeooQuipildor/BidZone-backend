@@ -5,7 +5,7 @@ import { entorno } from '../config/entorno.js';
 export function crearToken(usuario) {
   const secreto = process.env.JWT_SECRET || entorno.jwtSecreto;
   return jwt.sign(
-    { id: Number(usuario.id), role: usuario.role, email: usuario.email },
+    { id: Number(usuario.id), rol: usuario.rol, correo: usuario.correo },
     secreto,
     { expiresIn: entorno.jwtExpiraEn }
   );

@@ -1,43 +1,43 @@
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de reporte al formato JSON de la API
+// Convierte una fila SQL de reporte al objeto JSON en español
 export function formatearReporte(fila) {
   if (!fila) return null;
   return {
     id: Number(fila.id),
-    auctionId: Number(fila.subasta_id),
-    reporterId: Number(fila.denunciante_id),
-    reportedUserId: Number(fila.denunciado_id),
-    reason: fila.motivo,
-    description: fila.descripcion,
-    evidenceUrl: fila.url_evidencia ?? '',
-    status: fila.estado,
-    sanctionApplied: fila.sancion_aplicada,
-    createdAt: aFechaIso(fila.creado_en),
-    updatedAt: aFechaIso(fila.actualizado_en),
-    auctionTitle: fila.subasta_titulo ?? undefined,
-    reporterName: fila.denunciante_nombre ?? undefined,
-    reportedUserName: fila.denunciado_nombre ?? undefined,
+    subastaId: Number(fila.subasta_id),
+    denuncianteId: Number(fila.denunciante_id),
+    denunciadoId: Number(fila.denunciado_id),
+    motivo: fila.motivo,
+    descripcion: fila.descripcion,
+    urlEvidencia: fila.url_evidencia ?? '',
+    estado: fila.estado,
+    sancionAplicada: fila.sancion_aplicada,
+    creadoEn: aFechaIso(fila.creado_en),
+    actualizadoEn: aFechaIso(fila.actualizado_en),
+    tituloSubasta: fila.subasta_titulo ?? undefined,
+    nombreDenunciante: fila.denunciante_nombre ?? undefined,
+    nombreDenunciado: fila.denunciado_nombre ?? undefined,
   };
 }
 
 // Lista reportes con filtros opcionales de estado, subasta o usuario participante
-export async function listarTodos({ status, auctionId, participantUserId } = {}) {
+export async function listarTodos({ estado, subastaId, participanteId } = {}) {
   const filtros = [];
   const valores = [];
 
-  if (status && status !== 'todos') {
+  if (estado && estado !== 'todos') {
     filtros.push('r.estado = ?');
-    valores.push(status);
+    valores.push(estado);
   }
-  if (auctionId) {
+  if (subastaId) {
     filtros.push('r.subasta_id = ?');
-    valores.push(Number(auctionId));
+    valores.push(Number(subastaId));
   }
-  if (participantUserId) {
+  if (participanteId) {
     filtros.push('(r.denunciante_id = ? OR r.denunciado_id = ?)');
-    valores.push(Number(participantUserId), Number(participantUserId));
+    valores.push(Number(participanteId), Number(participanteId));
   }
 
   const where = filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
@@ -75,12 +75,12 @@ export async function crear(conexion, datos) {
     `INSERT INTO reportes (subasta_id, denunciante_id, denunciado_id, motivo, descripcion, url_evidencia, estado, sancion_aplicada)
      VALUES (?, ?, ?, ?, ?, ?, 'en_revision', 'Pendiente de evaluación')`,
     [
-      Number(datos.auctionId),
-      Number(datos.reporterId),
-      Number(datos.reportedUserId),
-      datos.reason,
-      datos.description,
-      datos.evidenceUrl || '',
+      Number(datos.subastaId),
+      Number(datos.denuncianteId),
+      Number(datos.denunciadoId),
+      datos.motivo,
+      datos.descripcion,
+      datos.urlEvidencia || '',
     ],
     conexion
   );
@@ -90,11 +90,11 @@ export async function crear(conexion, datos) {
 // Actualiza los campos modificados de un reporte
 export async function actualizar(conexion, id, campos) {
   const mapa = {
-    reason: 'motivo',
-    description: 'descripcion',
-    evidenceUrl: 'url_evidencia',
-    status: 'estado',
-    sanctionApplied: 'sancion_aplicada',
+    motivo: 'motivo',
+    descripcion: 'descripcion',
+    urlEvidencia: 'url_evidencia',
+    estado: 'estado',
+    sancionAplicada: 'sancion_aplicada',
   };
 
   const partes = [];

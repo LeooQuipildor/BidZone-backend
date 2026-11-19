@@ -11,21 +11,21 @@ import rutasNotificacion from './notificacion.routes.js';
 
 const rutasApi = Router();
 
-// Endpoint de salud para comprobar que el servidor y MySQL están vivos
+// Endpoint de salud para comprobar que el servidor y MySQL están activos
 rutasApi.get(
-  '/health',
+  '/salud',
   atraparErrores(async (_req, res) => {
     const bdConectada = await probarConexionBd();
     res.status(200).json({
-      status: 'ok',
-      service: 'bidzone-api',
-      database: bdConectada ? 'connected' : 'disconnected',
-      timestamp: new Date().toISOString(),
+      estado: 'ok',
+      servicio: 'bidzone-api',
+      baseDatos: bdConectada ? 'conectada' : 'desconectada',
+      fecha: new Date().toISOString(),
     });
   })
 );
 
-// Rutas en español
+// Rutas principales en español
 rutasApi.use('/autenticacion', rutasAutenticacion);
 rutasApi.use('/usuarios', rutasUsuario);
 rutasApi.use('/subastas', rutasSubasta);
@@ -33,14 +33,5 @@ rutasApi.use('/pujas', rutasPuja);
 rutasApi.use('/reportes', rutasReporte);
 rutasApi.use('/resenas', rutasResena);
 rutasApi.use('/notificaciones', rutasNotificacion);
-
-// Alias en inglés para mantener 100% compatibilidad con el frontend React
-rutasApi.use('/auth', rutasAutenticacion);
-rutasApi.use('/users', rutasUsuario);
-rutasApi.use('/auctions', rutasSubasta);
-rutasApi.use('/bids', rutasPuja);
-rutasApi.use('/reports', rutasReporte);
-rutasApi.use('/reviews', rutasResena);
-rutasApi.use('/notifications', rutasNotificacion);
 
 export default rutasApi;

@@ -16,44 +16,44 @@ export function atraparErrores(funcionAsync) {
 // Se ejecuta cuando nadie atendió la ruta solicitada (Error 404)
 export function rutaNoEncontrada(req, res) {
   res.status(404).json({
-    message: `Ruta no encontrada: ${req.method} ${req.originalUrl}`,
+    mensaje: `Ruta no encontrada: ${req.method} ${req.originalUrl}`,
   });
 }
 
 // Manejador central de errores: convierte cada error en una respuesta JSON clara
 export function manejarErrores(error, _req, res, _next) {
   if (error instanceof ErrorApi) {
-    return res.status(error.codigoHttp).json({ message: error.message });
+    return res.status(error.codigoHttp).json({ mensaje: error.message });
   }
 
   if (error instanceof SyntaxError && error.type === 'entity.parse.failed') {
-    return res.status(400).json({ message: 'El JSON enviado no es válido.' });
+    return res.status(400).json({ mensaje: 'El JSON enviado no es válido.' });
   }
 
   if (error?.name === 'TokenExpiredError') {
-    return res.status(401).json({ message: 'Tu sesión expiró. Inicia sesión nuevamente.' });
+    return res.status(401).json({ mensaje: 'Tu sesión expiró. Inicia sesión nuevamente.' });
   }
 
   if (error?.name === 'JsonWebTokenError') {
-    return res.status(401).json({ message: 'Token de autenticación inválido.' });
+    return res.status(401).json({ mensaje: 'Token de autenticación inválido.' });
   }
 
   if (error?.code === 'ER_DUP_ENTRY') {
-    return res.status(409).json({ message: 'Ya existe un registro con ese dato único.' });
+    return res.status(409).json({ mensaje: 'Ya existe un registro con ese dato único.' });
   }
 
   if (error?.code === 'ER_ROW_IS_REFERENCED' || error?.code === 'ER_ROW_IS_REFERENCED_2') {
     return res.status(409).json({
-      message: 'No se puede eliminar porque tiene operaciones asociadas.',
+      mensaje: 'No se puede eliminar porque tiene operaciones asociadas.',
     });
   }
 
   if (error?.code === 'ECONNREFUSED' || error?.code === 'ER_BAD_DB_ERROR') {
-    return res.status(503).json({ message: 'No hay conexión con la base de datos MySQL.' });
+    return res.status(503).json({ mensaje: 'No hay conexión con la base de datos MySQL.' });
   }
 
   if (process.env.NODE_ENV !== 'test') {
     console.error('[Error del servidor]', error);
   }
-  return res.status(500).json({ message: 'Error interno del servidor.' });
+  return res.status(500).json({ mensaje: 'Error interno del servidor.' });
 }

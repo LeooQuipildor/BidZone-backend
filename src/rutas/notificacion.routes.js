@@ -14,8 +14,8 @@ rutas.use(verificarToken);
 
 rutas.get('/', listarNotificaciones);
 rutas.post('/', exigirRol('admin'), crearNotificacion);
-rutas.patch('/read-all', marcarTodasLeidas);
-rutas.patch('/:id/read', validarParametroId('id'), marcarLeida);
+rutas.patch('/leer-todas', marcarTodasLeidas);
+rutas.patch('/:id/leida', validarParametroId('id'), marcarLeida);
 rutas.put('/:id', validarParametroId('id'), marcarLeida);
 rutas.delete('/:id', validarParametroId('id'), eliminarNotificacion);
 

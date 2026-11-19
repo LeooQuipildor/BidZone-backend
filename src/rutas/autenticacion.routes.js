@@ -4,8 +4,8 @@ import { verificarToken } from '../middlewares/autenticacion.middleware.js';
 
 const rutas = Router();
 
-rutas.post('/register', registrar);
-rutas.post('/login', iniciarSesion);
-rutas.get('/me', verificarToken, perfilActual);
+rutas.post('/registrar', registrar);
+rutas.post('/iniciar-sesion', iniciarSesion);
+rutas.get('/perfil', verificarToken, perfilActual);
 
 export default rutas;

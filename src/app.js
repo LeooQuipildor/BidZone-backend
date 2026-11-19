@@ -15,7 +15,7 @@ app.use(express.json({ limit: '1mb' }));
 
 // Ruta raíz de bienvenida
 app.get('/', (_req, res) => {
-  res.status(200).json({ name: 'BidZone REST API', version: '1.0.0', docs: '/api/health' });
+  res.status(200).json({ nombre: 'BidZone API REST', version: '1.0.0', salud: '/api/salud' });
 });
 
 // Todas las rutas de la API viven bajo /api

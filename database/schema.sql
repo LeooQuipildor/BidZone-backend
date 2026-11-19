@@ -1,5 +1,5 @@
 -- =============================================================================
--- BidZone · Base de Datos Relacional MySQL 8.0+ (Tablas y columnas en español)
+-- BidZone · Base de Datos Relacional MySQL 8.0+ (100% en español)
 -- 6 tablas relacionadas · Reglas de Negocio: RN01 - RN08
 -- =============================================================================
 
@@ -26,10 +26,10 @@ CREATE TABLE usuarios (
   nombre VARCHAR(120) NOT NULL,
   correo VARCHAR(160) NOT NULL,
   contrasena_hash VARCHAR(255) NOT NULL,
-  rol ENUM('user', 'admin') NOT NULL DEFAULT 'user',
+  rol ENUM('usuario', 'admin') NOT NULL DEFAULT 'usuario',
   telefono VARCHAR(40) NOT NULL DEFAULT '',
   ciudad VARCHAR(120) NOT NULL DEFAULT '',
-  estado ENUM('active', 'suspended', 'closed') NOT NULL DEFAULT 'active',
+  estado ENUM('activa', 'suspendida', 'cerrada') NOT NULL DEFAULT 'activa',
   reputacion DECIMAL(3, 2) NOT NULL DEFAULT 5.00,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -165,7 +165,7 @@ CREATE TABLE notificaciones (
   subasta_id INT UNSIGNED NULL,
   titulo VARCHAR(180) NOT NULL,
   mensaje TEXT NOT NULL,
-  tipo ENUM('outbid', 'won', 'closed', 'report', 'system') NOT NULL DEFAULT 'system',
+  tipo ENUM('superada', 'ganada', 'cerrada', 'reporte', 'sistema') NOT NULL DEFAULT 'sistema',
   leida TINYINT(1) NOT NULL DEFAULT 0,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

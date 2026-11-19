@@ -33,7 +33,7 @@ async function sembrarBaseDatos() {
     }
     if (process.env.SEED_USER_PASSWORD) {
       const hash = await bcrypt.hash(process.env.SEED_USER_PASSWORD, entorno.rondasBcrypt);
-      await conexion.execute(`UPDATE usuarios SET contrasena_hash = ? WHERE rol = 'user'`, [hash]);
+      await conexion.execute(`UPDATE usuarios SET contrasena_hash = ? WHERE rol = 'usuario'`, [hash]);
     }
 
     console.log('[BD] Datos iniciales cargados correctamente (25 usuarios y 50 subastas).');

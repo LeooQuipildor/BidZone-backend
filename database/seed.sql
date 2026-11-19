@@ -20,31 +20,31 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO usuarios (
   id, nombre, correo, contrasena_hash, rol, telefono, ciudad, estado, reputacion, creado_en
 ) VALUES
-(1,  'Leandro Quipildor',   'admin@bidzone.com',      '$2a$10$ozAJfMbplCg4W2tbRFEIhe3ViGSdwUSjVB.95.2ppaATR8eGB9Gm6', 'admin', '+54 9 381 555-0101', 'San Miguel de Tucumán', 'active',    4.90, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 DAY)),
-(2,  'Mario Matías Moussa', 'mario@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-0202', 'Yerba Buena, Tucumán',  'active',    4.85, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 55 DAY)),
-(3,  'Luciano Medina',      'luciano@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-0303', 'San Miguel de Tucumán', 'active',    4.80, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 52 DAY)),
-(4,  'Valentina Torres',    'valentina@correo.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 11 4444-8899', 'Córdoba Capital',       'suspended', 2.10, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 50 DAY)),
-(5,  'Sofía Herrera',       'sofia@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-0404', 'San Miguel de Tucumán', 'active',    4.90, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 48 DAY)),
-(6,  'Tomás Pereyra',       'tomas@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-0505', 'Yerba Buena, Tucumán',  'active',    4.75, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 46 DAY)),
-(7,  'Camila Rojas',        'camila@bidzone.com',     '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 351 555-0606', 'Córdoba Capital',       'active',    4.85, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 44 DAY)),
-(8,  'Mateo Benítez',       'mateo@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 341 555-0707', 'Rosario, Santa Fe',     'active',    4.65, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 42 DAY)),
-(9,  'Julieta Sosa',        'julieta@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 11 5555-0808', 'CABA, Buenos Aires',    'active',    4.95, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 40 DAY)),
-(10, 'Nicolás Navarro',     'nicolas@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 261 555-0909', 'Mendoza Capital',       'active',    4.70, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 38 DAY)),
-(11, 'Martina Giménez',     'martina@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 387 555-1010', 'Salta Capital',         'active',    4.80, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 36 DAY)),
-(12, 'Santiago Morales',    'santiago@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-1111', 'San Miguel de Tucumán', 'active',    4.60, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 34 DAY)),
-(13, 'Florencia Castro',    'florencia@bidzone.com',  '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 221 555-1212', 'La Plata, Buenos Aires','active',    4.88, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 32 DAY)),
-(14, 'Joaquín Romero',      'joaquin@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-1313', 'Yerba Buena, Tucumán',  'active',    4.72, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)),
-(15, 'Agustina Díaz',       'agustina@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 351 555-1414', 'Villa Carlos Paz',      'active',    4.92, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 28 DAY)),
-(16, 'Facundo Álvarez',     'facundo@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 388 555-1515', 'San Salvador de Jujuy', 'active',    4.68, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 26 DAY)),
-(17, 'Milagros Vega',       'milagros@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 385 555-1616', 'Santiago del Estero',   'active',    4.84, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 DAY)),
-(18, 'Lucas Fernández',     'lucas@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 223 555-1717', 'Mar del Plata',         'active',    4.77, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 22 DAY)),
-(19, 'Victoria Paz',        'victoria@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 299 555-1818', 'Neuquén Capital',       'active',    4.91, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 20 DAY)),
-(20, 'Ignacio Molina',      'ignacio@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 280 555-1919', 'Puerto Madryn, Chubut', 'active',    4.63, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 18 DAY)),
-(21, 'Antonella Quiroga',   'antonella@bidzone.com',  '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 264 555-2020', 'San Juan Capital',      'active',    4.89, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 16 DAY)),
-(22, 'Ezequiel Suárez',     'ezequiel@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 342 555-2121', 'Santa Fe Capital',      'active',    4.74, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)),
-(23, 'Belén Ledesma',       'belen@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 379 555-2222', 'Corrientes Capital',    'active',    4.86, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 12 DAY)),
-(24, 'Ramiro Acuña',        'ramiro@bidzone.com',     '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 381 555-2323', 'Tafí Viejo, Tucumán',   'active',    4.79, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 DAY)),
-(25, 'Damián Ortega',       'damian@correo.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'user',  '+54 9 11 5555-2424', 'Avellaneda, Bs. As.',   'closed',    1.80, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 8 DAY));
+(1,  'Leandro Quipildor',   'admin@bidzone.com',      '$2a$10$ozAJfMbplCg4W2tbRFEIhe3ViGSdwUSjVB.95.2ppaATR8eGB9Gm6', 'admin',   '+54 9 381 555-0101', 'San Miguel de Tucumán', 'activa',     4.90, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 DAY)),
+(2,  'Mario Matías Moussa', 'mario@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-0202', 'Yerba Buena, Tucumán',  'activa',     4.85, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 55 DAY)),
+(3,  'Luciano Medina',      'luciano@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-0303', 'San Miguel de Tucumán', 'activa',     4.80, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 52 DAY)),
+(4,  'Valentina Torres',    'valentina@correo.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 11 4444-8899', 'Córdoba Capital',       'suspendida', 2.10, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 50 DAY)),
+(5,  'Sofía Herrera',       'sofia@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-0404', 'San Miguel de Tucumán', 'activa',     4.90, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 48 DAY)),
+(6,  'Tomás Pereyra',       'tomas@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-0505', 'Yerba Buena, Tucumán',  'activa',     4.75, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 46 DAY)),
+(7,  'Camila Rojas',        'camila@bidzone.com',     '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 351 555-0606', 'Córdoba Capital',       'activa',     4.85, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 44 DAY)),
+(8,  'Mateo Benítez',       'mateo@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 341 555-0707', 'Rosario, Santa Fe',     'activa',     4.65, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 42 DAY)),
+(9,  'Julieta Sosa',        'julieta@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 11 5555-0808', 'CABA, Buenos Aires',    'activa',     4.95, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 40 DAY)),
+(10, 'Nicolás Navarro',     'nicolas@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 261 555-0909', 'Mendoza Capital',       'activa',     4.70, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 38 DAY)),
+(11, 'Martina Giménez',     'martina@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 387 555-1010', 'Salta Capital',         'activa',     4.80, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 36 DAY)),
+(12, 'Santiago Morales',    'santiago@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-1111', 'San Miguel de Tucumán', 'activa',     4.60, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 34 DAY)),
+(13, 'Florencia Castro',    'florencia@bidzone.com',  '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 221 555-1212', 'La Plata, Buenos Aires','activa',     4.88, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 32 DAY)),
+(14, 'Joaquín Romero',      'joaquin@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-1313', 'Yerba Buena, Tucumán',  'activa',     4.72, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)),
+(15, 'Agustina Díaz',       'agustina@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 351 555-1414', 'Villa Carlos Paz',      'activa',     4.92, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 28 DAY)),
+(16, 'Facundo Álvarez',     'facundo@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 388 555-1515', 'San Salvador de Jujuy', 'activa',     4.68, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 26 DAY)),
+(17, 'Milagros Vega',       'milagros@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 385 555-1616', 'Santiago del Estero',   'activa',     4.84, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 DAY)),
+(18, 'Lucas Fernández',     'lucas@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 223 555-1717', 'Mar del Plata',         'activa',     4.77, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 22 DAY)),
+(19, 'Victoria Paz',        'victoria@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 299 555-1818', 'Neuquén Capital',       'activa',     4.91, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 20 DAY)),
+(20, 'Ignacio Molina',      'ignacio@bidzone.com',    '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 280 555-1919', 'Puerto Madryn, Chubut', 'activa',     4.63, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 18 DAY)),
+(21, 'Antonella Quiroga',   'antonella@bidzone.com',  '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 264 555-2020', 'San Juan Capital',      'activa',     4.89, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 16 DAY)),
+(22, 'Ezequiel Suárez',     'ezequiel@bidzone.com',   '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 342 555-2121', 'Santa Fe Capital',      'activa',     4.74, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)),
+(23, 'Belén Ledesma',       'belen@bidzone.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 379 555-2222', 'Corrientes Capital',    'activa',     4.86, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 12 DAY)),
+(24, 'Ramiro Acuña',        'ramiro@bidzone.com',     '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 381 555-2323', 'Tafí Viejo, Tucumán',   'activa',     4.79, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 DAY)),
+(25, 'Damián Ortega',       'damian@correo.com',      '$2a$10$oSCPdeG00HPjyNG7zgGBbuHtAfFb6Tl651ORt/hitvJNjOWAYxJMm', 'usuario', '+54 9 11 5555-2424', 'Avellaneda, Bs. As.',   'cerrada',    1.80, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 8 DAY));
 
 ALTER TABLE usuarios AUTO_INCREMENT = 26;
 
@@ -156,10 +156,10 @@ ALTER TABLE resenas AUTO_INCREMENT = 905;
 -- 6. Notificaciones
 -- -----------------------------------------------------------------------------
 INSERT INTO notificaciones (id, usuario_id, subasta_id, titulo, mensaje, tipo, leida, creado_en) VALUES
-(1001, 3,  101, '¡Oferta superada!', 'Tu oferta en "MacBook Pro M3 Pro 14"" fue superada con $1.450.000.', 'outbid', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR)),
-(1002, 3,  103, '¡Ganaste la subasta! Contacto liberado', 'Ganaste "Silla Ergonómica Herman Miller Aeron". Ya puedes ver el teléfono y correo del vendedor.', 'won', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 HOUR)),
-(1003, 2,  103, 'Subasta finalizada con ganador', 'Tu subasta "Silla Ergonómica Herman Miller Aeron" cerró en $920.000.', 'closed', 1, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 HOUR)),
-(1004, 9,  149, '¡Ganaste la subasta! Contacto liberado', 'Ganaste "Auriculares Sony WH-1000XM5 Negros" en $450.000.', 'won', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 12 HOUR)),
-(1005, 11, 150, '¡Ganaste la subasta! Contacto liberado', 'Ganaste "Steam Deck OLED 512GB" en $960.000.', 'won', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 16 HOUR));
+(1001, 3,  101, '¡Oferta superada!', 'Tu oferta en "MacBook Pro M3 Pro 14"" fue superada con $1.450.000.', 'superada', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR)),
+(1002, 3,  103, '¡Ganaste la subasta! Contacto liberado', 'Ganaste "Silla Ergonómica Herman Miller Aeron". Ya puedes ver el teléfono y correo del vendedor.', 'ganada', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 HOUR)),
+(1003, 2,  103, 'Subasta finalizada con ganador', 'Tu subasta "Silla Ergonómica Herman Miller Aeron" cerró en $920.000.', 'cerrada', 1, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 HOUR)),
+(1004, 9,  149, '¡Ganaste la subasta! Contacto liberado', 'Ganaste "Auriculares Sony WH-1000XM5 Negros" en $450.000.', 'ganada', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 12 HOUR)),
+(1005, 11, 150, '¡Ganaste la subasta! Contacto liberado', 'Ganaste "Steam Deck OLED 512GB" en $960.000.', 'ganada', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 16 HOUR));
 
 ALTER TABLE notificaciones AUTO_INCREMENT = 1006;

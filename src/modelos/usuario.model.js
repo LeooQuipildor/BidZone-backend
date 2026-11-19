@@ -4,38 +4,38 @@ import { aFechaIso } from '../utilidades/fecha.js';
 const COLUMNAS_USUARIO =
   'id, nombre, correo, rol, telefono, ciudad, estado, reputacion, creado_en, actualizado_en';
 
-// Convierte una fila de MySQL al formato JSON del usuario (sin contraseña)
+// Convierte una fila de MySQL al objeto usuario en español (nunca expone la contraseña)
 export function formatearUsuario(fila) {
   if (!fila) return null;
   return {
     id: Number(fila.id),
-    name: fila.nombre,
-    email: fila.correo,
-    role: fila.rol,
-    phone: fila.telefono ?? '',
-    city: fila.ciudad ?? '',
-    status: fila.estado,
-    reputation: Number(fila.reputacion ?? 5),
-    createdAt: aFechaIso(fila.creado_en),
-    updatedAt: aFechaIso(fila.actualizado_en),
+    nombre: fila.nombre,
+    correo: fila.correo,
+    rol: fila.rol,
+    telefono: fila.telefono ?? '',
+    ciudad: fila.ciudad ?? '',
+    estado: fila.estado,
+    reputacion: Number(fila.reputacion ?? 5),
+    creadoEn: aFechaIso(fila.creado_en),
+    actualizadoEn: aFechaIso(fila.actualizado_en),
   };
 }
 
 // Lista usuarios con filtros opcionales de rol, estado o búsqueda
-export async function listarTodos({ role, status, search } = {}) {
+export async function listarTodos({ rol, estado, busqueda } = {}) {
   const filtros = [];
   const valores = [];
 
-  if (role) {
+  if (rol) {
     filtros.push('rol = ?');
-    valores.push(role);
+    valores.push(rol);
   }
-  if (status) {
+  if (estado) {
     filtros.push('estado = ?');
-    valores.push(status);
+    valores.push(estado);
   }
-  if (search && String(search).trim() !== '') {
-    const patron = `%${String(search).trim()}%`;
+  if (busqueda && String(busqueda).trim() !== '') {
+    const patron = `%${String(busqueda).trim()}%`;
     filtros.push('(nombre LIKE ? OR correo LIKE ? OR ciudad LIKE ?)');
     valores.push(patron, patron, patron);
   }
@@ -64,7 +64,7 @@ export async function buscarParaLogin(correo) {
     [String(correo).trim()]
   );
   if (!filas[0]) return null;
-  return { ...formatearUsuario(filas[0]), passwordHash: filas[0].contrasena_hash };
+  return { ...formatearUsuario(filas[0]), contrasenaHash: filas[0].contrasena_hash };
 }
 
 // Revisa si el correo ya está usado por otra cuenta
@@ -85,14 +85,14 @@ export async function crear(datos) {
     `INSERT INTO usuarios (nombre, correo, contrasena_hash, rol, telefono, ciudad, estado, reputacion)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      datos.name,
-      datos.email.toLowerCase(),
-      datos.passwordHash,
-      datos.role || 'user',
-      datos.phone || '',
-      datos.city || '',
-      datos.status || 'active',
-      Number(datos.reputation ?? 5.0),
+      datos.nombre,
+      datos.correo.toLowerCase(),
+      datos.contrasenaHash,
+      datos.rol || 'usuario',
+      datos.telefono || '',
+      datos.ciudad || '',
+      datos.estado || 'activa',
+      Number(datos.reputacion ?? 5.0),
     ]
   );
   return buscarPorId(resultado.insertId);
@@ -101,14 +101,14 @@ export async function crear(datos) {
 // Actualiza solo los campos enviados para un usuario
 export async function actualizar(id, campos) {
   const mapa = {
-    name: 'nombre',
-    email: 'correo',
-    passwordHash: 'contrasena_hash',
-    role: 'rol',
-    phone: 'telefono',
-    city: 'ciudad',
-    status: 'estado',
-    reputation: 'reputacion',
+    nombre: 'nombre',
+    correo: 'correo',
+    contrasenaHash: 'contrasena_hash',
+    rol: 'rol',
+    telefono: 'telefono',
+    ciudad: 'ciudad',
+    estado: 'estado',
+    reputacion: 'reputacion',
   };
 
   const partes = [];
@@ -116,7 +116,7 @@ export async function actualizar(id, campos) {
   for (const [clave, columna] of Object.entries(mapa)) {
     if (campos[clave] !== undefined) {
       partes.push(`${columna} = ?`);
-      valores.push(clave === 'email' ? String(campos[clave]).toLowerCase() : campos[clave]);
+      valores.push(clave === 'correo' ? String(campos[clave]).toLowerCase() : campos[clave]);
     }
   }
 

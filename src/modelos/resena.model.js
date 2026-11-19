@@ -1,41 +1,41 @@
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de reseña al formato JSON de la API
+// Convierte una fila SQL de reseña al objeto JSON en español
 export function formatearResena(fila) {
   if (!fila) return null;
   return {
     id: Number(fila.id),
-    auctionId: Number(fila.subasta_id),
-    reviewerId: Number(fila.autor_id),
-    targetUserId: Number(fila.calificado_id),
-    rating: Number(fila.puntaje),
-    comment: fila.comentario,
-    roleContext: fila.contexto_rol,
-    createdAt: aFechaIso(fila.creado_en),
-    updatedAt: aFechaIso(fila.actualizado_en),
-    auctionTitle: fila.subasta_titulo ?? undefined,
-    reviewerName: fila.autor_nombre ?? undefined,
-    targetUserName: fila.calificado_nombre ?? undefined,
+    subastaId: Number(fila.subasta_id),
+    autorId: Number(fila.autor_id),
+    calificadoId: Number(fila.calificado_id),
+    puntaje: Number(fila.puntaje),
+    comentario: fila.comentario,
+    contextoRol: fila.contexto_rol,
+    creadoEn: aFechaIso(fila.creado_en),
+    actualizadoEn: aFechaIso(fila.actualizado_en),
+    tituloSubasta: fila.subasta_titulo ?? undefined,
+    nombreAutor: fila.autor_nombre ?? undefined,
+    nombreCalificado: fila.calificado_nombre ?? undefined,
   };
 }
 
 // Lista reseñas filtrando por subasta, calificado o autor
-export async function listarTodas({ auctionId, targetUserId, reviewerId } = {}) {
+export async function listarTodas({ subastaId, calificadoId, autorId } = {}) {
   const filtros = [];
   const valores = [];
 
-  if (auctionId) {
+  if (subastaId) {
     filtros.push('rs.subasta_id = ?');
-    valores.push(Number(auctionId));
+    valores.push(Number(subastaId));
   }
-  if (targetUserId) {
+  if (calificadoId) {
     filtros.push('rs.calificado_id = ?');
-    valores.push(Number(targetUserId));
+    valores.push(Number(calificadoId));
   }
-  if (reviewerId) {
+  if (autorId) {
     filtros.push('rs.autor_id = ?');
-    valores.push(Number(reviewerId));
+    valores.push(Number(autorId));
   }
 
   const where = filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
@@ -68,24 +68,24 @@ export async function buscarPorId(id, conexion) {
 }
 
 // Verifica si un usuario ya calificó esa subasta (RN07)
-export async function yaCalifico(conexion, idSubasta, idAutor) {
+export async function yaCalifico(conexion, subastaId, autorId) {
   const filas = await consultar(
     'SELECT id FROM resenas WHERE subasta_id = ? AND autor_id = ? LIMIT 1',
-    [Number(idSubasta), Number(idAutor)],
+    [Number(subastaId), Number(autorId)],
     conexion
   );
   return filas.length > 0;
 }
 
 // Recalcula el promedio de estrellas de un usuario y lo guarda en la tabla usuarios
-export async function recalcularReputacion(conexion, idUsuario) {
+export async function recalcularReputacion(conexion, usuarioId) {
   const filas = await consultar(
     'SELECT ROUND(AVG(puntaje), 2) AS promedio, COUNT(*) AS total FROM resenas WHERE calificado_id = ?',
-    [Number(idUsuario)],
+    [Number(usuarioId)],
     conexion
   );
   const nuevaReputacion = Number(filas[0]?.total) > 0 ? Number(filas[0].promedio) : 5.0;
-  await consultar('UPDATE usuarios SET reputacion = ? WHERE id = ?', [nuevaReputacion, Number(idUsuario)], conexion);
+  await consultar('UPDATE usuarios SET reputacion = ? WHERE id = ?', [nuevaReputacion, Number(usuarioId)], conexion);
   return nuevaReputacion;
 }
 
@@ -95,12 +95,12 @@ export async function crear(conexion, datos) {
     `INSERT INTO resenas (subasta_id, autor_id, calificado_id, puntaje, comentario, contexto_rol)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
-      Number(datos.auctionId),
-      Number(datos.reviewerId),
-      Number(datos.targetUserId),
-      Number(datos.rating),
-      datos.comment || '',
-      datos.roleContext || 'comprador_a_vendedor',
+      Number(datos.subastaId),
+      Number(datos.autorId),
+      Number(datos.calificadoId),
+      Number(datos.puntaje),
+      datos.comentario || '',
+      datos.contextoRol || 'comprador_a_vendedor',
     ],
     conexion
   );
@@ -109,7 +109,7 @@ export async function crear(conexion, datos) {
 
 // Actualiza puntaje, comentario o contexto de una reseña
 export async function actualizar(conexion, id, campos) {
-  const mapa = { rating: 'puntaje', comment: 'comentario', roleContext: 'contexto_rol' };
+  const mapa = { puntaje: 'puntaje', comentario: 'comentario', contextoRol: 'contexto_rol' };
   const partes = [];
   const valores = [];
 

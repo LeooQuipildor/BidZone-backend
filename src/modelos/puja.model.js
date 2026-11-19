@@ -1,34 +1,34 @@
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de puja al formato JSON de la API
+// Convierte una fila SQL de puja al objeto JSON en español
 export function formatearPuja(fila) {
   if (!fila) return null;
   return {
     id: Number(fila.id),
-    auctionId: Number(fila.subasta_id),
-    bidderId: Number(fila.postor_id),
-    amount: Number(fila.monto),
-    note: fila.nota ?? '',
-    commitmentAccepted: Boolean(fila.compromiso_aceptado),
-    createdAt: aFechaIso(fila.creado_en),
-    bidderName: fila.postor_nombre ?? undefined,
-    auctionTitle: fila.subasta_titulo ?? undefined,
+    subastaId: Number(fila.subasta_id),
+    postorId: Number(fila.postor_id),
+    monto: Number(fila.monto),
+    nota: fila.nota ?? '',
+    compromisoAceptado: Boolean(fila.compromiso_aceptado),
+    creadoEn: aFechaIso(fila.creado_en),
+    nombrePostor: fila.postor_nombre ?? undefined,
+    tituloSubasta: fila.subasta_titulo ?? undefined,
   };
 }
 
 // Lista pujas filtrando opcionalmente por subasta o por postor
-export async function listarTodas({ auctionId, bidderId } = {}) {
+export async function listarTodas({ subastaId, postorId } = {}) {
   const filtros = [];
   const valores = [];
 
-  if (auctionId) {
+  if (subastaId) {
     filtros.push('p.subasta_id = ?');
-    valores.push(Number(auctionId));
+    valores.push(Number(subastaId));
   }
-  if (bidderId) {
+  if (postorId) {
     filtros.push('p.postor_id = ?');
-    valores.push(Number(bidderId));
+    valores.push(Number(postorId));
   }
 
   const where = filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
@@ -59,10 +59,10 @@ export async function buscarPorId(id, conexion) {
 }
 
 // Devuelve la oferta más alta actual de una subasta
-export async function buscarOfertaLider(conexion, idSubasta) {
+export async function buscarOfertaLider(conexion, subastaId) {
   const filas = await consultar(
     `SELECT * FROM pujas WHERE subasta_id = ? ORDER BY monto DESC, id ASC LIMIT 1`,
-    [Number(idSubasta)],
+    [Number(subastaId)],
     conexion
   );
   return formatearPuja(filas[0]);
@@ -73,7 +73,7 @@ export async function crear(conexion, datos) {
   const resultado = await consultar(
     `INSERT INTO pujas (subasta_id, postor_id, monto, nota, compromiso_aceptado)
      VALUES (?, ?, ?, ?, 1)`,
-    [Number(datos.auctionId), Number(datos.bidderId), Number(datos.amount), datos.note || ''],
+    [Number(datos.subastaId), Number(datos.postorId), Number(datos.monto), datos.nota || ''],
     conexion
   );
   return buscarPorId(resultado.insertId, conexion);
@@ -84,13 +84,13 @@ export async function actualizar(conexion, id, campos) {
   const partes = [];
   const valores = [];
 
-  if (campos.amount !== undefined) {
+  if (campos.monto !== undefined) {
     partes.push('monto = ?');
-    valores.push(campos.amount);
+    valores.push(campos.monto);
   }
-  if (campos.note !== undefined) {
+  if (campos.nota !== undefined) {
     partes.push('nota = ?');
-    valores.push(campos.note);
+    valores.push(campos.nota);
   }
 
   if (partes.length > 0) {
@@ -107,17 +107,17 @@ export async function eliminar(conexion, id) {
 }
 
 // Recalcula el precio actual de la subasta cuando se modifica o borra una puja
-export async function recalcularPrecioSubasta(conexion, idSubasta) {
+export async function recalcularPrecioSubasta(conexion, subastaId) {
   const filas = await consultar(
     `SELECT s.precio_base, (SELECT MAX(p.monto) FROM pujas p WHERE p.subasta_id = s.id) AS max_puja
      FROM subastas s WHERE s.id = ? LIMIT 1`,
-    [Number(idSubasta)],
+    [Number(subastaId)],
     conexion
   );
   if (!filas[0]) return null;
 
   const maximo = filas[0].max_puja != null ? Number(filas[0].max_puja) : 0;
   const nuevoPrecio = Math.max(Number(filas[0].precio_base), maximo);
-  await consultar('UPDATE subastas SET precio_actual = ? WHERE id = ?', [nuevoPrecio, Number(idSubasta)], conexion);
+  await consultar('UPDATE subastas SET precio_actual = ? WHERE id = ?', [nuevoPrecio, Number(subastaId)], conexion);
   return nuevoPrecio;
 }

@@ -5,13 +5,13 @@ import { ErrorApi, atraparErrores } from '../middlewares/errores.middleware.js';
 import { esCorreoValido, exigirCampos } from '../middlewares/validar.middleware.js';
 import { crearToken } from '../utilidades/token.js';
 
-// POST /api/autenticacion/register - Crea una cuenta nueva y devuelve token JWT
+// POST /api/autenticacion/registrar - Crea una cuenta nueva y devuelve token JWT
 export const registrar = atraparErrores(async (req, res) => {
-  exigirCampos(req.body, ['name', 'email', 'password']);
+  exigirCampos(req.body, ['nombre', 'correo', 'contrasena']);
 
-  const nombre = String(req.body.name).trim();
-  const correo = String(req.body.email).trim().toLowerCase();
-  const contrasena = String(req.body.password);
+  const nombre = String(req.body.nombre).trim();
+  const correo = String(req.body.correo).trim().toLowerCase();
+  const contrasena = String(req.body.contrasena);
 
   if (nombre.length < 2) throw new ErrorApi(400, 'El nombre debe tener al menos 2 caracteres.');
   if (!esCorreoValido(correo)) throw new ErrorApi(400, 'El correo electrónico no es válido.');
@@ -24,42 +24,42 @@ export const registrar = atraparErrores(async (req, res) => {
   const contrasenaHash = await bcrypt.hash(contrasena, entorno.rondasBcrypt);
 
   const nuevoUsuario = await modeloUsuario.crear({
-    name: nombre,
-    email: correo,
-    passwordHash: contrasenaHash,
-    phone: req.body.phone ? String(req.body.phone).trim() : '',
-    city: req.body.city ? String(req.body.city).trim() : '',
+    nombre,
+    correo,
+    contrasenaHash,
+    telefono: req.body.telefono ? String(req.body.telefono).trim() : '',
+    ciudad: req.body.ciudad ? String(req.body.ciudad).trim() : '',
   });
 
   const token = crearToken(nuevoUsuario);
-  res.status(201).json({ token, user: nuevoUsuario });
+  res.status(201).json({ token, usuario: nuevoUsuario });
 });
 
-// POST /api/autenticacion/login - Valida credenciales y devuelve token JWT
+// POST /api/autenticacion/iniciar-sesion - Valida credenciales y devuelve token JWT
 export const iniciarSesion = atraparErrores(async (req, res) => {
-  exigirCampos(req.body, ['email', 'password']);
+  exigirCampos(req.body, ['correo', 'contrasena']);
 
-  const correo = String(req.body.email).trim().toLowerCase();
-  const contrasena = String(req.body.password);
+  const correo = String(req.body.correo).trim().toLowerCase();
+  const contrasena = String(req.body.contrasena);
 
   if (!esCorreoValido(correo)) throw new ErrorApi(400, 'El correo electrónico no es válido.');
 
   const usuario = await modeloUsuario.buscarParaLogin(correo);
-  if (!usuario || !(await bcrypt.compare(contrasena, usuario.passwordHash))) {
+  if (!usuario || !(await bcrypt.compare(contrasena, usuario.contrasenaHash))) {
     throw new ErrorApi(401, 'Credenciales inválidas. Verifica tu correo y contraseña.');
   }
 
   // RN06: Bloquear acceso a cuentas suspendidas o cerradas
-  if (usuario.status !== 'active') {
+  if (usuario.estado !== 'activa') {
     throw new ErrorApi(403, 'RN06: Esta cuenta está suspendida o cerrada.');
   }
 
-  const { passwordHash: _oculto, ...usuarioSeguro } = usuario;
+  const { contrasenaHash: _oculto, ...usuarioSeguro } = usuario;
   const token = crearToken(usuarioSeguro);
-  res.status(200).json({ token, user: usuarioSeguro });
+  res.status(200).json({ token, usuario: usuarioSeguro });
 });
 
-// GET /api/autenticacion/me - Devuelve el usuario que está logueado
+// GET /api/autenticacion/perfil - Devuelve el usuario que está logueado
 export const perfilActual = atraparErrores(async (req, res) => {
-  res.status(200).json({ user: req.usuario });
+  res.status(200).json({ usuario: req.usuario });
 });
