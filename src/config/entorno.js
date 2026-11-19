@@ -1,30 +1,45 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/config/entorno.js
+ * ROL: Carga las variables de configuración desde el archivo ".env".
+ * ============================================================================
+ *
+ * ¿POR QUÉ SE USA UN ARCHIVO ".env"?
+ * Nunca se deben escribir contraseñas de MySQL ni claves secretas JWT directo
+ * en el código fuente porque se subirían a GitHub. El archivo ".env" vive solo
+ * en tu computadora (está en .gitignore) y la librería "dotenv" lo lee al iniciar.
+ */
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-// Carga las variables del archivo backend/.env en process.env
+// En módulos ES ("type": "module"), calculamos la ruta de esta carpeta para encontrar "../../.env"
 const rutaActual = fileURLToPath(import.meta.url);
 const carpetaActual = path.dirname(rutaActual);
 dotenv.config({ path: path.resolve(carpetaActual, '../../.env') });
 
-// Configuración general del servidor y la base de datos
+// Objeto central con toda la configuración del proyecto (si falta una variable, usa un valor por defecto)
 export const entorno = {
-  puerto: Number(process.env.PORT) || 3000,
-  modo: process.env.NODE_ENV || 'development',
-  origenCors: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  jwtSecreto: process.env.JWT_SECRET || '',
-  jwtExpiraEn: process.env.JWT_EXPIRES_IN || '8h',
-  rondasBcrypt: 10,
+  puerto: Number(process.env.PORT) || 3000,               // Puerto donde escucha Express
+  modo: process.env.NODE_ENV || 'development',            // 'development', 'production' o 'test'
+  origenCors: process.env.CORS_ORIGIN || 'http://localhost:5173', // Dirección del frontend React
+  jwtSecreto: process.env.JWT_SECRET || '',               // Clave secreta para firmar tokens JWT
+  jwtExpiraEn: process.env.JWT_EXPIRES_IN || '8h',        // Duración de cada sesión (8 horas)
+  rondasBcrypt: 10,                                       // Nivel de seguridad para encriptar contraseñas
   bd: {
-    host: process.env.DB_HOST || 'localhost',
-    puerto: Number(process.env.DB_PORT) || 3306,
-    usuario: process.env.DB_USER || 'root',
-    contrasena: process.env.DB_PASSWORD || '',
-    nombre: process.env.DB_NAME || 'bidzone_db',
+    host: process.env.DB_HOST || 'localhost',             // Servidor donde corre MySQL
+    puerto: Number(process.env.DB_PORT) || 3306,          // Puerto estándar de MySQL
+    usuario: process.env.DB_USER || 'root',               // Usuario de MySQL
+    contrasena: process.env.DB_PASSWORD || '',            // Contraseña de MySQL
+    nombre: process.env.DB_NAME || 'bidzone_db',          // Nombre de la base de datos
   },
 };
 
-// Revisa que existan las variables mínimas antes de arrancar
+/**
+ * Revisa que las variables obligatorias estén completas antes de arrancar.
+ * Si falta alguna, lanza un error claro para avisar al programador qué debe completar en .env.
+ */
 export function validarEntorno(exigirJwt = true) {
   if (exigirJwt && !entorno.jwtSecreto) {
     throw new Error('Falta configurar JWT_SECRET en el archivo backend/.env');

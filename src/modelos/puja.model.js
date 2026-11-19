@@ -1,7 +1,18 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/modelos/puja.model.js
+ * ROL: Consultas SQL de la tabla "pujas" (ofertas vinculantes RN01 - RN04).
+ * ============================================================================
+ *
+ * Observa que funciones como crear(), actualizar(), eliminar() y recalcularPrecioSubasta()
+ * reciben "conexion" como primer parámetro porque se ejecutan DENTRO de una transacción
+ * SQL abierta por el controlador de pujas.
+ */
+
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de puja al objeto JSON en español
+// Convierte una fila SQL de puja en un objeto JSON limpio en español
 export function formatearPuja(fila) {
   if (!fila) return null;
   return {
@@ -17,7 +28,7 @@ export function formatearPuja(fila) {
   };
 }
 
-// Lista pujas filtrando opcionalmente por subasta o por postor
+// Lista pujas uniendo el nombre del postor y el título de la subasta mediante INNER JOIN
 export async function listarTodas({ subastaId, postorId } = {}) {
   const filtros = [];
   const valores = [];
@@ -44,7 +55,7 @@ export async function listarTodas({ subastaId, postorId } = {}) {
   return filas.map(formatearPuja);
 }
 
-// Busca una puja por ID
+// Busca una puja individual por ID
 export async function buscarPorId(id, conexion) {
   const filas = await consultar(
     `SELECT p.*, u.nombre AS postor_nombre, s.titulo AS subasta_titulo
@@ -58,7 +69,7 @@ export async function buscarPorId(id, conexion) {
   return formatearPuja(filas[0]);
 }
 
-// Devuelve la oferta más alta actual de una subasta
+// Devuelve la oferta líder actual de una subasta (sirve para avisarle cuando alguien lo supera)
 export async function buscarOfertaLider(conexion, subastaId) {
   const filas = await consultar(
     `SELECT * FROM pujas WHERE subasta_id = ? ORDER BY monto DESC, id ASC LIMIT 1`,
@@ -68,7 +79,7 @@ export async function buscarOfertaLider(conexion, subastaId) {
   return formatearPuja(filas[0]);
 }
 
-// Inserta una puja nueva dentro de la transacción
+// Guarda la oferta nueva con compromiso_aceptado = 1 (RN04)
 export async function crear(conexion, datos) {
   const resultado = await consultar(
     `INSERT INTO pujas (subasta_id, postor_id, monto, nota, compromiso_aceptado)
@@ -79,7 +90,7 @@ export async function crear(conexion, datos) {
   return buscarPorId(resultado.insertId, conexion);
 }
 
-// Actualiza nota o monto de una puja
+// Actualiza la nota de coordinación (o el monto si lo hace un administrador)
 export async function actualizar(conexion, id, campos) {
   const partes = [];
   const valores = [];
@@ -106,7 +117,7 @@ export async function eliminar(conexion, id) {
   return resultado.affectedRows > 0;
 }
 
-// Recalcula el precio actual de la subasta cuando se modifica o borra una puja
+// Si un admin borra o corrige una puja, recalcula precio_actual buscando el MAX(monto) o volviendo al precio_base
 export async function recalcularPrecioSubasta(conexion, subastaId) {
   const filas = await consultar(
     `SELECT s.precio_base, (SELECT MAX(p.monto) FROM pujas p WHERE p.subasta_id = s.id) AS max_puja

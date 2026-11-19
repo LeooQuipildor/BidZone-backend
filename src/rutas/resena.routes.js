@@ -1,3 +1,11 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/rutas/resena.routes.js
+ * PREFIJO: /api/resenas
+ * ============================================================================
+ * Rutas de calificaciones mutuas (1 a 5 estrellas) post-cierre (RN07).
+ */
+
 import { Router } from 'express';
 import {
   listarResenas,

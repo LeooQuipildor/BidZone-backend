@@ -1,3 +1,16 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/rutas/index.js
+ * ROL: Enrutador maestro que conecta los 7 módulos de la API bajo el prefijo "/api".
+ * ============================================================================
+ *
+ * Ejemplo de cómo arma Express las URLs finales:
+ *   app.js monta este archivo en "/api"
+ *   + este archivo monta rutasSubasta en "/subastas"
+ *   + subasta.routes.js define "/:id"
+ *   = URL final: GET http://localhost:3000/api/subastas/:id
+ */
+
 import { Router } from 'express';
 import { probarConexionBd } from '../config/baseDatos.js';
 import { atraparErrores } from '../middlewares/errores.middleware.js';
@@ -11,7 +24,7 @@ import rutasNotificacion from './notificacion.routes.js';
 
 const rutasApi = Router();
 
-// Endpoint de salud para comprobar que el servidor y MySQL están activos
+// GET /api/salud -> Permite verificar rápidamente si el servidor y MySQL responden
 rutasApi.get(
   '/salud',
   atraparErrores(async (_req, res) => {
@@ -25,7 +38,7 @@ rutasApi.get(
   })
 );
 
-// Rutas principales en español
+// Conectamos cada módulo de rutas en su prefijo correspondiente
 rutasApi.use('/autenticacion', rutasAutenticacion);
 rutasApi.use('/usuarios', rutasUsuario);
 rutasApi.use('/subastas', rutasSubasta);

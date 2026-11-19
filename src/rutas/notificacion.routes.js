@@ -1,3 +1,12 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/rutas/notificacion.routes.js
+ * PREFIJO: /api/notificaciones
+ * ============================================================================
+ * Bandeja de notificaciones personales del usuario (ofertas superadas, cierres, etc.).
+ * Nota: '/leer-todas' va ANTES de '/:id' para que Express no confunda 'leer-todas' con un ID.
+ */
+
 import { Router } from 'express';
 import {
   listarNotificaciones,

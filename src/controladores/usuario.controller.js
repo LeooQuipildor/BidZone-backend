@@ -1,3 +1,16 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/controladores/usuario.controller.js
+ * ROL: Controlador CRUD de usuarios + privacidad de contacto (RN05) + control de rol (RN06).
+ * ============================================================================
+ *
+ * REGLAS QUE PROTEGE ESTE ARCHIVO:
+ * - RN05: Ningún usuario común puede ver el correo o teléfono de un desconocido.
+ *   Solo se muestran si es admin, si es su propio perfil o si compartieron una subasta finalizada.
+ * - RN06: Solo un administrador puede cambiar el rol, estado ('activa'/'suspendida'/'cerrada')
+ *   o la reputación de una cuenta.
+ */
+
 import bcrypt from 'bcryptjs';
 import { entorno } from '../config/entorno.js';
 import * as modeloUsuario from '../modelos/usuario.model.js';
@@ -12,7 +25,7 @@ import {
 const ROLES_VALIDOS = ['usuario', 'admin'];
 const ESTADOS_VALIDOS = ['activa', 'suspendida', 'cerrada'];
 
-// RN05: Oculta correo y teléfono si no es admin, ni perfil propio, ni socio de subasta finalizada
+// Función auxiliar RN05: devuelve el usuario intacto si hay permiso, o con correo/teléfono en null
 function ocultarContactoSiCorresponde(usuario, solicitante, idsLiberados) {
   const esAdmin = solicitante?.rol === 'admin';
   const esPropio = Number(solicitante?.id) === Number(usuario.id);
@@ -22,7 +35,7 @@ function ocultarContactoSiCorresponde(usuario, solicitante, idsLiberados) {
   return { ...usuario, correo: null, telefono: null, contactoBloqueado: true };
 }
 
-// GET /api/usuarios - Lista todos los usuarios con filtros opcionales
+// GET /api/usuarios -> Lista usuarios aplicando filtros de req.query (?rol=...&estado=...&busqueda=...)
 export const listarUsuarios = atraparErrores(async (req, res) => {
   const { rol, estado, busqueda } = req.query;
   if (rol) exigirValorPermitido(rol, ROLES_VALIDOS, 'rol');
@@ -38,7 +51,7 @@ export const listarUsuarios = atraparErrores(async (req, res) => {
   res.status(200).json(resultado);
 });
 
-// GET /api/usuarios/:id - Devuelve un usuario por ID
+// GET /api/usuarios/:id -> Devuelve un usuario individual respetando privacidad RN05
 export const obtenerUsuario = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const usuario = await modeloUsuario.buscarPorId(id);
@@ -52,7 +65,7 @@ export const obtenerUsuario = atraparErrores(async (req, res) => {
   res.status(200).json(ocultarContactoSiCorresponde(usuario, req.usuario, idsLiberados));
 });
 
-// POST /api/usuarios - Crea un usuario nuevo (solo administrador)
+// POST /api/usuarios -> Alta de usuario desde el Panel de Administración (ruta protegida con exigirRol('admin'))
 export const crearUsuario = atraparErrores(async (req, res) => {
   exigirCampos(req.body, ['nombre', 'correo', 'contrasena']);
 
@@ -86,7 +99,7 @@ export const crearUsuario = atraparErrores(async (req, res) => {
   res.status(201).json(usuarioCreado);
 });
 
-// PUT /api/usuarios/:id - Modifica perfil propio o cualquier usuario si es admin
+// PUT /api/usuarios/:id -> Permite editar el propio perfil o, si es admin, cualquier cuenta y su estado
 export const actualizarUsuario = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const actual = await modeloUsuario.buscarPorId(id);
@@ -96,7 +109,7 @@ export const actualizarUsuario = atraparErrores(async (req, res) => {
   const esPropio = Number(req.usuario.id) === Number(id);
   if (!esAdmin && !esPropio) throw new ErrorApi(403, 'No tienes permisos para modificar otro usuario.');
 
-  // RN06: Solo un admin puede cambiar rol, estado o reputación
+  // RN06: Si un socio común intenta enviarse rol='admin' o cambiarse su estado, lo rechazamos con 403
   const intentaCambiarAdmin =
     (req.body.rol !== undefined && req.body.rol !== actual.rol) ||
     (req.body.estado !== undefined && req.body.estado !== actual.estado) ||
@@ -106,6 +119,7 @@ export const actualizarUsuario = atraparErrores(async (req, res) => {
     throw new ErrorApi(403, 'RN06: Solo un administrador puede cambiar el rol, estado o reputación.');
   }
 
+  // Solo copiamos al objeto "cambios" los campos que realmente envió el cliente
   const cambios = {};
   if (req.body.nombre !== undefined) {
     const nombre = String(req.body.nombre).trim();
@@ -132,7 +146,7 @@ export const actualizarUsuario = atraparErrores(async (req, res) => {
   res.status(200).json(actualizado);
 });
 
-// DELETE /api/usuarios/:id - Elimina una cuenta (solo admin y no puede borrarse a sí mismo)
+// DELETE /api/usuarios/:id -> Elimina una cuenta (el admin no puede eliminarse a sí mismo)
 export const eliminarUsuario = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   if (Number(req.usuario.id) === Number(id)) {

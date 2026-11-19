@@ -1,6 +1,21 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/modelos/subasta.model.js
+ * ROL: Consultas SQL de la tabla "subastas" y cierre automático de lotes vencidos.
+ * ============================================================================
+ *
+ * PUNTOS CLAVE PARA ESTUDIAR:
+ * - "cerrarSubastasVencidas()": Implementa RN03. Busca subastas 'activa' cuyo reloj
+ *   ya pasó (fecha_fin <= UTC_TIMESTAMP()), las bloquea con "FOR UPDATE" dentro de
+ *   una transacción, asigna al postor con la oferta más alta y genera notificaciones.
+ * - "INNER JOIN" / "LEFT JOIN": Une la tabla "subastas" con "usuarios" para traer el
+ *   nombre del vendedor y del ganador en una sola consulta rápida.
+ */
+
 import { consultar, ejecutarTransaccion } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
+// Diccionario seguro de cláusulas ORDER BY (nunca concatenamos texto libre del usuario al ORDER BY)
 const ORDENES_SQL = {
   proximasACerrar: "s.estado = 'activa' DESC, s.fecha_fin ASC, s.id DESC",
   precioAsc: 's.precio_actual ASC, s.id DESC',
@@ -8,7 +23,7 @@ const ORDENES_SQL = {
   masRecientes: 's.creado_en DESC, s.id DESC',
 };
 
-// Convierte una fila SQL de subasta al objeto JSON en español
+// Traduce una fila SQL de la tabla "subastas" al objeto JSON en español
 export function formatearSubasta(fila) {
   if (!fila) return null;
   return {
@@ -34,7 +49,13 @@ export function formatearSubasta(fila) {
   };
 }
 
-// Cierra automáticamente las subastas cuyo tiempo ya venció y notifica al ganador (RN03)
+/**
+ * RN03: Cierra automáticamente las subastas cuyo plazo venció.
+ * 1. Primero hace una consulta liviana para ver si hay al menos una vencida (si no, termina rápido).
+ * 2. Si hay vencidas, abre una transacción y bloquea esas filas con "FOR UPDATE".
+ * 3. Para cada subasta vencida busca la puja más alta, marca estado = 'finalizada',
+ *    guarda ganador_id y crea notificaciones para ganador y vendedor.
+ */
 export async function cerrarSubastasVencidas() {
   const vencidas = await consultar(
     `SELECT id FROM subastas WHERE estado = 'activa' AND fecha_fin <= UTC_TIMESTAMP() LIMIT 1`
@@ -49,6 +70,7 @@ export async function cerrarSubastasVencidas() {
     );
 
     for (const subasta of lista) {
+      // Ordena por monto DESC y en empate gana la primera puja registrada (id ASC)
       const mejores = await consultar(
         `SELECT postor_id FROM pujas WHERE subasta_id = ? ORDER BY monto DESC, id ASC LIMIT 1`,
         [subasta.id],
@@ -79,7 +101,7 @@ export async function cerrarSubastasVencidas() {
   });
 }
 
-// Lista todas las subastas con filtros opcionales y ordenamiento
+// Lista subastas aplicando filtros opcionales y contando las pujas de cada lote con COALESCE(..., 0)
 export async function listarTodas({ categoria, estado, busqueda, vendedorId, ordenarPor = 'proximasACerrar' } = {}) {
   const filtros = [];
   const valores = [];
@@ -119,7 +141,7 @@ export async function listarTodas({ categoria, estado, busqueda, vendedorId, ord
   return filas.map(formatearSubasta);
 }
 
-// Busca una subasta por ID trayendo datos completos del vendedor y del ganador
+// Trae la fila completa con correo y teléfono de vendedor/ganador para que el controlador decida si liberarlos (RN05)
 export async function buscarDetalleCrudo(id, conexion) {
   const filas = await consultar(
     `SELECT s.*, v.nombre AS vendedor_nombre, v.correo AS vendedor_correo, v.telefono AS vendedor_telefono,
@@ -142,18 +164,19 @@ export async function buscarPorId(id, conexion) {
   return formatearSubasta(fila);
 }
 
-// Bloquea la fila de la subasta durante una transacción de puja para evitar choques
+// "FOR UPDATE" bloquea temporalmente esta fila mientras se procesa una puja para que 2 pujas simultáneas no se pisen
 export async function buscarParaBloquear(conexion, id) {
   const filas = await consultar('SELECT * FROM subastas WHERE id = ? LIMIT 1 FOR UPDATE', [Number(id)], conexion);
   return filas[0] || null;
 }
 
+// Cuenta cuántas ofertas recibió una subasta (se usa para aplicar el bloqueo de edición RN08)
 export async function contarPujas(id) {
   const filas = await consultar('SELECT COUNT(*) AS total FROM pujas WHERE subasta_id = ?', [Number(id)]);
   return Number(filas[0]?.total || 0);
 }
 
-// Crea una subasta nueva
+// Inserta una nueva subasta (al crearse, precio_actual arranca igual a precio_base y estado = 'activa')
 export async function crear(datos) {
   const resultado = await consultar(
     `INSERT INTO subastas (titulo, descripcion, categoria, url_imagen, precio_base, precio_actual, incremento_minimo, vendedor_id, ganador_id, estado, fecha_fin)
@@ -173,7 +196,7 @@ export async function crear(datos) {
   return buscarPorId(resultado.insertId);
 }
 
-// Actualiza los campos modificados de una subasta
+// Actualiza solo los campos modificados de una subasta
 export async function actualizar(id, campos) {
   const mapa = {
     titulo: 'titulo',
@@ -203,7 +226,7 @@ export async function actualizar(id, campos) {
   return buscarPorId(id);
 }
 
-// Elimina una subasta por ID
+// Borra una subasta por ID
 export async function eliminar(id) {
   const resultado = await consultar('DELETE FROM subastas WHERE id = ?', [Number(id)]);
   return resultado.affectedRows > 0;

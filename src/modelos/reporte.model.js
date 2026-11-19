@@ -1,7 +1,18 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/modelos/reporte.model.js
+ * ROL: Consultas SQL de la tabla "reportes" (expedientes de incumplimiento RN06).
+ * ============================================================================
+ *
+ * Cada reporte vincula 3 claves foráneas: la subasta involucrada, el usuario
+ * denunciante (u1) y el usuario denunciado (u2). Por eso hacemos dos INNER JOIN
+ * contra la tabla "usuarios" usando alias distintos (u1 y u2).
+ */
+
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de reporte al objeto JSON en español
+// Convierte una fila SQL de reporte en un objeto JSON en español
 export function formatearReporte(fila) {
   if (!fila) return null;
   return {
@@ -22,7 +33,7 @@ export function formatearReporte(fila) {
   };
 }
 
-// Lista reportes con filtros opcionales de estado, subasta o usuario participante
+// Lista reportes (si se pasa participanteId, devuelve solo donde esa persona denunció o fue denunciada)
 export async function listarTodos({ estado, subastaId, participanteId } = {}) {
   const filtros = [];
   const valores = [];
@@ -54,7 +65,7 @@ export async function listarTodos({ estado, subastaId, participanteId } = {}) {
   return filas.map(formatearReporte);
 }
 
-// Busca un reporte por su ID
+// Busca un expediente por su ID
 export async function buscarPorId(id, conexion) {
   const filas = await consultar(
     `SELECT r.*, s.titulo AS subasta_titulo, u1.nombre AS denunciante_nombre, u2.nombre AS denunciado_nombre
@@ -69,7 +80,7 @@ export async function buscarPorId(id, conexion) {
   return formatearReporte(filas[0]);
 }
 
-// Crea un reporte nuevo en estado 'en_revision'
+// Inserta un reporte nuevo (siempre nace en estado 'en_revision' y pendiente de evaluación)
 export async function crear(conexion, datos) {
   const resultado = await consultar(
     `INSERT INTO reportes (subasta_id, denunciante_id, denunciado_id, motivo, descripcion, url_evidencia, estado, sancion_aplicada)
@@ -87,7 +98,7 @@ export async function crear(conexion, datos) {
   return buscarPorId(resultado.insertId, conexion);
 }
 
-// Actualiza los campos modificados de un reporte
+// Actualiza los campos modificados de un expediente
 export async function actualizar(conexion, id, campos) {
   const mapa = {
     motivo: 'motivo',
@@ -113,7 +124,7 @@ export async function actualizar(conexion, id, campos) {
   return buscarPorId(id, conexion);
 }
 
-// Elimina un reporte por su ID
+// Elimina un reporte por ID
 export async function eliminar(id) {
   const resultado = await consultar('DELETE FROM reportes WHERE id = ?', [Number(id)]);
   return resultado.affectedRows > 0;

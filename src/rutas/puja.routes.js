@@ -1,3 +1,12 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/rutas/puja.routes.js
+ * PREFIJO: /api/pujas
+ * ============================================================================
+ * Todas las acciones de pujas requieren sesión iniciada.
+ * Por RN04 (ofertas irrevocables), solo un 'admin' puede eliminar una puja.
+ */
+
 import { Router } from 'express';
 import {
   listarPujas,

@@ -1,7 +1,18 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/modelos/notificacion.model.js
+ * ROL: Consultas SQL de la tabla "notificaciones" (avisos personales del usuario).
+ * ============================================================================
+ *
+ * En MySQL no existe tipo booleano real, por eso la columna "leida" es TINYINT(1)
+ * (0 = sin leer, 1 = leída). "formatearNotificacion()" la convierte a true/false
+ * con Boolean(fila.leida) para que React la use directamente.
+ */
+
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de notificación al objeto JSON en español
+// Convierte una fila SQL de notificación en un objeto JSON en español
 export function formatearNotificacion(fila) {
   if (!fila) return null;
   return {
@@ -16,7 +27,7 @@ export function formatearNotificacion(fila) {
   };
 }
 
-// Lista notificaciones de un usuario (opcionalmente solo las no leídas)
+// Lista notificaciones de un usuario ordenadas desde la más reciente
 export async function listarTodas({ usuarioId, soloSinLeer = false } = {}) {
   const filtros = [];
   const valores = [];
@@ -41,7 +52,7 @@ export async function buscarPorId(id) {
   return formatearNotificacion(filas[0]);
 }
 
-// Crea una notificación nueva
+// Inserta una notificación nueva en la bandeja del destinatario
 export async function crear(datos) {
   const resultado = await consultar(
     `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, ?)`,
@@ -56,13 +67,13 @@ export async function crear(datos) {
   return buscarPorId(resultado.insertId);
 }
 
-// Marca una notificación como leída
+// Marca una notificación individual como leída (leida = 1)
 export async function marcarLeida(id) {
   await consultar('UPDATE notificaciones SET leida = 1 WHERE id = ?', [Number(id)]);
   return buscarPorId(id);
 }
 
-// Marca todas las notificaciones pendientes de un usuario como leídas
+// Marca en lote todas las notificaciones sin leer del usuario y devuelve cuántas cambió
 export async function marcarTodasLeidas(usuarioId) {
   const resultado = await consultar(
     'UPDATE notificaciones SET leida = 1 WHERE usuario_id = ? AND leida = 0',

@@ -1,7 +1,18 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/modelos/resena.model.js
+ * ROL: Consultas SQL de la tabla "resenas" y recálculo de reputación (RN07).
+ * ============================================================================
+ *
+ * Cada vez que se crea, edita o elimina una reseña, el controlador llama a
+ * "recalcularReputacion()" para promediar las estrellas con AVG(puntaje) en SQL
+ * y actualizar la columna "reputacion" de la tabla "usuarios".
+ */
+
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// Convierte una fila SQL de reseña al objeto JSON en español
+// Convierte una fila SQL de reseña en un objeto JSON en español
 export function formatearResena(fila) {
   if (!fila) return null;
   return {
@@ -20,7 +31,7 @@ export function formatearResena(fila) {
   };
 }
 
-// Lista reseñas filtrando por subasta, calificado o autor
+// Lista reseñas con filtros opcionales de subasta, usuario calificado o autor
 export async function listarTodas({ subastaId, calificadoId, autorId } = {}) {
   const filtros = [];
   const valores = [];
@@ -52,7 +63,7 @@ export async function listarTodas({ subastaId, calificadoId, autorId } = {}) {
   return filas.map(formatearResena);
 }
 
-// Busca una reseña por su ID
+// Busca una calificación por ID
 export async function buscarPorId(id, conexion) {
   const filas = await consultar(
     `SELECT rs.*, s.titulo AS subasta_titulo, u1.nombre AS autor_nombre, u2.nombre AS calificado_nombre
@@ -67,7 +78,7 @@ export async function buscarPorId(id, conexion) {
   return formatearResena(filas[0]);
 }
 
-// Verifica si un usuario ya calificó esa subasta (RN07)
+// RN07: Verifica si este autor ya calificó esa subasta para impedir calificaciones duplicadas
 export async function yaCalifico(conexion, subastaId, autorId) {
   const filas = await consultar(
     'SELECT id FROM resenas WHERE subasta_id = ? AND autor_id = ? LIMIT 1',
@@ -77,7 +88,7 @@ export async function yaCalifico(conexion, subastaId, autorId) {
   return filas.length > 0;
 }
 
-// Recalcula el promedio de estrellas de un usuario y lo guarda en la tabla usuarios
+// Calcula el promedio redondeado a 2 decimales (si el usuario no tiene reseñas vuelve a 5.0)
 export async function recalcularReputacion(conexion, usuarioId) {
   const filas = await consultar(
     'SELECT ROUND(AVG(puntaje), 2) AS promedio, COUNT(*) AS total FROM resenas WHERE calificado_id = ?',
@@ -107,7 +118,7 @@ export async function crear(conexion, datos) {
   return buscarPorId(resultado.insertId, conexion);
 }
 
-// Actualiza puntaje, comentario o contexto de una reseña
+// Actualiza puntaje, comentario o contexto de una reseña existente
 export async function actualizar(conexion, id, campos) {
   const mapa = { puntaje: 'puntaje', comentario: 'comentario', contextoRol: 'contexto_rol' };
   const partes = [];
@@ -127,7 +138,7 @@ export async function actualizar(conexion, id, campos) {
   return buscarPorId(id, conexion);
 }
 
-// Elimina una reseña por su ID
+// Elimina una reseña por ID
 export async function eliminar(conexion, id) {
   const resultado = await consultar('DELETE FROM resenas WHERE id = ?', [Number(id)], conexion);
   return resultado.affectedRows > 0;

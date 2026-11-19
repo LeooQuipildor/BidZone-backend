@@ -1,10 +1,26 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/modelos/usuario.model.js
+ * ROL: Capa de acceso a datos (SQL) para la tabla "usuarios" de MySQL.
+ * ============================================================================
+ *
+ * ¿QUÉ HACE UN MODELO?
+ * Solo se encarga de hablar con MySQL (SELECT, INSERT, UPDATE, DELETE) y
+ * devolver objetos JavaScript limpios. No sabe nada de HTTP ni de req/res.
+ *
+ * SEGURIDAD IMPORTANTE:
+ * Observa que "COLUMNAS_USUARIO" NO incluye "contrasena_hash". Así garantizamos
+ * que ninguna consulta normal devuelva la contraseña encriptada por accidente.
+ * Solo "buscarParaLogin()" pide "contrasena_hash" cuando el usuario inicia sesión.
+ */
+
 import { consultar } from '../config/baseDatos.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
 const COLUMNAS_USUARIO =
   'id, nombre, correo, rol, telefono, ciudad, estado, reputacion, creado_en, actualizado_en';
 
-// Convierte una fila de MySQL al objeto usuario en español (nunca expone la contraseña)
+// Convierte una fila cruda de MySQL (snake_case) en un objeto JS limpio (camelCase)
 export function formatearUsuario(fila) {
   if (!fila) return null;
   return {
@@ -21,7 +37,7 @@ export function formatearUsuario(fila) {
   };
 }
 
-// Lista usuarios con filtros opcionales de rol, estado o búsqueda
+// Arma un WHERE dinámico según los filtros opcionales que envíe el controlador
 export async function listarTodos({ rol, estado, busqueda } = {}) {
   const filtros = [];
   const valores = [];
@@ -35,6 +51,7 @@ export async function listarTodos({ rol, estado, busqueda } = {}) {
     valores.push(estado);
   }
   if (busqueda && String(busqueda).trim() !== '') {
+    // LIKE '%texto%' busca coincidencias parciales en nombre, correo o ciudad
     const patron = `%${String(busqueda).trim()}%`;
     filtros.push('(nombre LIKE ? OR correo LIKE ? OR ciudad LIKE ?)');
     valores.push(patron, patron, patron);
@@ -48,7 +65,7 @@ export async function listarTodos({ rol, estado, busqueda } = {}) {
   return filas.map(formatearUsuario);
 }
 
-// Busca un usuario por su ID
+// Busca un único usuario por su ID (LIMIT 1 detiene la búsqueda apenas lo encuentra)
 export async function buscarPorId(id) {
   const filas = await consultar(
     `SELECT ${COLUMNAS_USUARIO} FROM usuarios WHERE id = ? LIMIT 1`,
@@ -57,7 +74,7 @@ export async function buscarPorId(id) {
   return formatearUsuario(filas[0]);
 }
 
-// Busca un usuario por correo incluyendo su contraseña encriptada (solo para login)
+// Única consulta que trae "contrasena_hash" para que bcrypt.compare() pueda validar el login
 export async function buscarParaLogin(correo) {
   const filas = await consultar(
     `SELECT ${COLUMNAS_USUARIO}, contrasena_hash FROM usuarios WHERE LOWER(correo) = LOWER(?) LIMIT 1`,
@@ -67,7 +84,7 @@ export async function buscarParaLogin(correo) {
   return { ...formatearUsuario(filas[0]), contrasenaHash: filas[0].contrasena_hash };
 }
 
-// Revisa si el correo ya está usado por otra cuenta
+// Comprueba si un correo ya está registrado (si se pasa excluirId, ignora al propio usuario al editar)
 export async function existeCorreo(correo, excluirId = null) {
   const valores = [String(correo).trim()];
   let sql = 'SELECT id FROM usuarios WHERE LOWER(correo) = LOWER(?)';
@@ -79,7 +96,7 @@ export async function existeCorreo(correo, excluirId = null) {
   return filas.length > 0;
 }
 
-// Inserta un usuario nuevo y devuelve el registro creado
+// Inserta un usuario nuevo y vuelve a leerlo usando resultado.insertId (el ID autoincremental asignado por MySQL)
 export async function crear(datos) {
   const resultado = await consultar(
     `INSERT INTO usuarios (nombre, correo, contrasena_hash, rol, telefono, ciudad, estado, reputacion)
@@ -98,7 +115,7 @@ export async function crear(datos) {
   return buscarPorId(resultado.insertId);
 }
 
-// Actualiza solo los campos enviados para un usuario
+// Actualiza únicamente las columnas que efectivamente llegaron en el objeto "campos"
 export async function actualizar(id, campos) {
   const mapa = {
     nombre: 'nombre',
@@ -127,13 +144,17 @@ export async function actualizar(id, campos) {
   return buscarPorId(id);
 }
 
-// Elimina un usuario por su ID
+// Elimina un usuario por su ID y devuelve true si realmente se borró una fila
 export async function eliminar(id) {
   const resultado = await consultar('DELETE FROM usuarios WHERE id = ?', [Number(id)]);
   return resultado.affectedRows > 0;
 }
 
-// Devuelve los IDs de usuarios con los que compartió una subasta finalizada (RN05)
+/**
+ * RN05 (Trato Directo):
+ * Devuelve un Set con los IDs de las personas con las que el usuario compartió
+ * al menos una subasta 'finalizada' con ganador. Solo con ellos se liberan correo y teléfono.
+ */
 export async function obtenerSociosConContactoLiberado(idUsuario) {
   const filas = await consultar(
     `SELECT DISTINCT CASE WHEN vendedor_id = ? THEN ganador_id ELSE vendedor_id END AS socio_id

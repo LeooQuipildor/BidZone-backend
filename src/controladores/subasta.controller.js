@@ -1,3 +1,18 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/controladores/subasta.controller.js
+ * ROL: Controlador de subastas (catálogo, detalle con contacto RN05, alta, edición RN08 y baja).
+ * ============================================================================
+ *
+ * REGLAS DE NEGOCIO QUE APLICA:
+ * - RN03: Antes de listar o ver detalle, ejecuta "cerrarSubastasVencidas()" para
+ *   asegurar que ningún lote vencido siga figurando como 'activa'.
+ * - RN05: Al consultar el detalle (GET /api/subastas/:id), solo agrega correo y
+ *   teléfono del vendedor y ganador si la subasta está 'finalizada' y quien consulta es parte involucrada.
+ * - RN08: Si una subasta ya tiene al menos una puja, bloquea cambios de precio base,
+ *   incremento mínimo, fecha de cierre y la eliminación por parte del vendedor.
+ */
+
 import * as modeloSubasta from '../modelos/subasta.model.js';
 import * as modeloPuja from '../modelos/puja.model.js';
 import { ErrorApi, atraparErrores } from '../middlewares/errores.middleware.js';
@@ -14,7 +29,7 @@ const ORDENES_VALIDOS = ['proximasACerrar', 'precioAsc', 'precioDesc', 'masRecie
 const IMAGEN_DEFECTO =
   'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80';
 
-// GET /api/subastas - Lista subastas con filtros y ordenamiento
+// GET /api/subastas -> Lista el catálogo aplicando filtros de req.query (?categoria=...&estado=...&ordenarPor=...)
 export const listarSubastas = atraparErrores(async (req, res) => {
   await modeloSubasta.cerrarSubastasVencidas();
   const { categoria, estado, busqueda, vendedorId, ordenarPor } = req.query;
@@ -29,14 +44,14 @@ export const listarSubastas = atraparErrores(async (req, res) => {
   res.status(200).json(subastas);
 });
 
-// GET /api/subastas/:id - Detalle de subasta, pujas y contacto liberado al cierre (RN05)
+// GET /api/subastas/:id -> Devuelve la subasta, su historial de pujas y libera contacto si corresponde (RN05)
 export const obtenerSubasta = atraparErrores(async (req, res) => {
   await modeloSubasta.cerrarSubastasVencidas();
   const id = leerIdPositivo(req.params.id);
   const fila = await modeloSubasta.buscarDetalleCrudo(id);
   if (!fila) throw new ErrorApi(404, 'Subasta no encontrada.');
 
-  // RN05: Solo vendedor, ganador o admin ven correo y teléfono cuando la subasta ya finalizó
+  // RN05: Verificamos si quien consulta es vendedor, ganador o admin en una subasta ya finalizada
   const usuario = req.usuario;
   const esParteAutorizada =
     usuario &&
@@ -46,6 +61,7 @@ export const obtenerSubasta = atraparErrores(async (req, res) => {
 
   const contactoLiberado = Boolean(fila.estado === 'finalizada' && fila.ganador_id && esParteAutorizada);
 
+  // Spread condicional "...(contactoLiberado ? { correo, telefono } : {})": solo agrega los campos si está liberado
   const vendedor = {
     id: Number(fila.vendedor_id),
     nombre: fila.vendedor_nombre,
@@ -73,7 +89,7 @@ export const obtenerSubasta = atraparErrores(async (req, res) => {
   });
 });
 
-// POST /api/subastas - Publica una subasta nueva
+// POST /api/subastas -> Publica un nuevo lote validando precios positivos y fecha futura
 export const crearSubasta = atraparErrores(async (req, res) => {
   exigirCampos(req.body, ['titulo', 'precioBase', 'incrementoMinimo', 'fechaFin']);
 
@@ -88,6 +104,7 @@ export const crearSubasta = atraparErrores(async (req, res) => {
     throw new ErrorApi(400, 'La fecha de cierre debe ser posterior al momento actual.');
   }
 
+  // Por defecto el vendedor es quien está logueado; un admin puede publicar a nombre de otro vendedorId
   let vendedorId = req.usuario.id;
   if (req.usuario.rol === 'admin' && req.body.vendedorId) {
     vendedorId = leerIdPositivo(req.body.vendedorId) || vendedorId;
@@ -107,7 +124,7 @@ export const crearSubasta = atraparErrores(async (req, res) => {
   res.status(201).json(creada);
 });
 
-// PUT /api/subastas/:id - Edita una subasta (RN08: bloquea precio/fecha si ya tiene pujas)
+// PUT /api/subastas/:id -> Edita una subasta aplicando el bloqueo RN08 si ya recibió pujas
 export const actualizarSubasta = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const actual = await modeloSubasta.buscarPorId(id);
@@ -119,7 +136,7 @@ export const actualizarSubasta = atraparErrores(async (req, res) => {
 
   const cantidadPujas = await modeloSubasta.contarPujas(id);
 
-  // RN08: Si ya hay pujas, el vendedor no puede cambiar precio base, incremento ni fecha
+  // RN08: Si ya hay pujas activas, el vendedor no puede cambiar condiciones económicas ni fecha de cierre
   if (cantidadPujas > 0 && !esAdmin) {
     if (req.body.precioBase !== undefined && Number(req.body.precioBase) !== Number(actual.precioBase)) {
       throw new ErrorApi(409, 'RN08: No puedes cambiar el precio base porque ya hay ofertas.');
@@ -143,7 +160,7 @@ export const actualizarSubasta = atraparErrores(async (req, res) => {
   if (req.body.urlImagen !== undefined) cambios.urlImagen = String(req.body.urlImagen).trim();
   if (req.body.precioBase !== undefined) {
     cambios.precioBase = exigirNumeroPositivo(req.body.precioBase, 'precioBase');
-    if (cantidadPujas === 0) cambios.precioActual = cambios.precioBase;
+    if (cantidadPujas === 0) cambios.precioActual = cambios.precioBase; // Si no había pujas, sincroniza precioActual
   }
   if (req.body.incrementoMinimo !== undefined) {
     cambios.incrementoMinimo = exigirNumeroPositivo(req.body.incrementoMinimo, 'incrementoMinimo');
@@ -168,7 +185,7 @@ export const actualizarSubasta = atraparErrores(async (req, res) => {
   res.status(200).json(actualizada);
 });
 
-// DELETE /api/subastas/:id - Elimina una subasta (RN08: no si ya tiene pujas, salvo admin)
+// DELETE /api/subastas/:id -> Elimina una subasta (RN08 impide borrarla si ya tiene pujas, salvo admin)
 export const eliminarSubasta = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const actual = await modeloSubasta.buscarPorId(id);

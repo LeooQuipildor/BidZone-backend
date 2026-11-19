@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/controladores/reporte.controller.js
+ * ROL: Controlador de tickets de mediación y sanciones disciplinarias (RN06).
+ * ============================================================================
+ *
+ * ¿CÓMO FUNCIONA LA REGLA RN06?
+ * 1. Un socio abre un ticket denunciando a otro usuario por incumplimiento (POST /api/reportes).
+ * 2. Se guarda el ticket en estado 'en_revision' y se envía notificación al denunciado.
+ * 3. Un administrador atiende el ticket (PATCH /api/reportes/:id) y decide:
+ *    - 'desestimado' + 'ninguna': cierra sin sanción.
+ *    - 'resuelto_sancion' + 'suspender' o 'cerrar': cambia el estado del infractor en la tabla
+ *      "usuarios" a 'suspendida' o 'cerrada', bloqueando su sesión inmediatamente en verificarToken().
+ *    - 'activar': rehabilita una cuenta previamente suspendida.
+ */
+
 import { consultar, ejecutarTransaccion } from '../config/baseDatos.js';
 import * as modeloSubasta from '../modelos/subasta.model.js';
 import * as modeloReporte from '../modelos/reporte.model.js';
@@ -8,7 +24,7 @@ import { exigirCampos, exigirValorPermitido, leerIdPositivo } from '../middlewar
 const ESTADOS_REPORTE = ['en_revision', 'resuelto_sancion', 'desestimado'];
 const ACCIONES_CUENTA = ['ninguna', 'suspender', 'cerrar', 'activar'];
 
-// GET /api/reportes - Lista reportes (admin ve todos, usuario solo los suyos)
+// GET /api/reportes -> El admin ve todos los expedientes; un socio solo ve donde él participa
 export const listarReportes = atraparErrores(async (req, res) => {
   const { estado, subastaId } = req.query;
   if (estado && estado !== 'todos') exigirValorPermitido(estado, ESTADOS_REPORTE, 'estado');
@@ -24,7 +40,7 @@ export const listarReportes = atraparErrores(async (req, res) => {
   res.status(200).json(reportes);
 });
 
-// GET /api/reportes/:id - Devuelve un expediente específico
+// GET /api/reportes/:id -> Devuelve un ticket solo si eres admin, denunciante o denunciado
 export const obtenerReporte = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const reporte = await modeloReporte.buscarPorId(id);
@@ -39,7 +55,7 @@ export const obtenerReporte = atraparErrores(async (req, res) => {
   res.status(200).json(reporte);
 });
 
-// POST /api/reportes - Abre un ticket de reporte y notifica al denunciado (RN06)
+// POST /api/reportes -> Abre un expediente nuevo y notifica al usuario denunciado dentro de una transacción
 export const crearReporte = atraparErrores(async (req, res) => {
   exigirCampos(req.body, ['subastaId', 'denunciadoId', 'motivo', 'descripcion']);
 
@@ -73,7 +89,7 @@ export const crearReporte = atraparErrores(async (req, res) => {
   res.status(201).json(reporteCreado);
 });
 
-// PUT/PATCH /api/reportes/:id - Resuelve ticket y aplica sanción (Admin) o edita reclamo (Denunciante)
+// PUT/PATCH /api/reportes/:id -> El denunciante puede editar su reclamo si sigue abierto; el admin lo resuelve y sanciona
 export const actualizarReporte = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   if (req.body.estado !== undefined) exigirValorPermitido(req.body.estado, ESTADOS_REPORTE, 'estado');
@@ -89,6 +105,7 @@ export const actualizarReporte = atraparErrores(async (req, res) => {
     const esDenunciante = Number(actual.denuncianteId) === Number(req.usuario.id);
     if (!esAdmin && !esDenunciante) throw new ErrorApi(403, 'No tienes permisos para modificar este reporte.');
 
+    // Un socio común no puede resolver su propio ticket ni aplicar sanciones
     if (!esAdmin) {
       const intentaSancionar =
         (req.body.estado !== undefined && req.body.estado !== actual.estado) ||
@@ -110,7 +127,7 @@ export const actualizarReporte = atraparErrores(async (req, res) => {
 
     const guardado = await modeloReporte.actualizar(conexion, id, cambios);
 
-    // RN06: Aplica suspensión, cierre o reactivación sobre la cuenta denunciada
+    // RN06: Si el administrador dictamina sanción, actualizamos la tabla "usuarios" y notificamos al infractor
     const accion = esAdmin ? req.body.accionCuenta : 'ninguna';
     if (esAdmin && (guardado.estado === 'resuelto_sancion' || accion === 'suspender' || accion === 'cerrar')) {
       const nuevoEstado = accion === 'cerrar' ? 'cerrada' : 'suspendida';
@@ -135,7 +152,7 @@ export const actualizarReporte = atraparErrores(async (req, res) => {
   res.status(200).json(actualizado);
 });
 
-// DELETE /api/reportes/:id - Elimina un reporte (solo administrador)
+// DELETE /api/reportes/:id -> Borra un ticket (ruta restringida a administradores)
 export const eliminarReporte = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const actual = await modeloReporte.buscarPorId(id);

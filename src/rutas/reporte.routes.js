@@ -1,3 +1,12 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/rutas/reporte.routes.js
+ * PREFIJO: /api/reportes
+ * ============================================================================
+ * Rutas de tickets de mediación por incumplimiento (RN06).
+ * Cualquier usuario logueado puede abrir un ticket; solo el admin puede borrarlos.
+ */
+
 import { Router } from 'express';
 import {
   listarReportes,

@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/controladores/notificacion.controller.js
+ * ROL: Controlador de la bandeja personal de avisos del usuario.
+ * ============================================================================
+ *
+ * PRIVACIDAD:
+ * Un socio común solo puede consultar, marcar como leídas y borrar SUS PROPIAS
+ * notificaciones (req.usuario.id). Solo un administrador puede enviar avisos
+ * manuales a otros usuarios (POST /api/notificaciones).
+ */
+
 import * as modeloNotificacion from '../modelos/notificacion.model.js';
 import * as modeloUsuario from '../modelos/usuario.model.js';
 import { ErrorApi, atraparErrores } from '../middlewares/errores.middleware.js';
@@ -5,7 +17,7 @@ import { exigirCampos, exigirValorPermitido, leerIdPositivo } from '../middlewar
 
 const TIPOS_VALIDOS = ['superada', 'ganada', 'cerrada', 'reporte', 'sistema'];
 
-// GET /api/notificaciones - Lista notificaciones del usuario logueado (o de otro si es admin)
+// GET /api/notificaciones -> Devuelve las notificaciones del usuario logueado (?sinLeer=true filtra pendientes)
 export const listarNotificaciones = atraparErrores(async (req, res) => {
   let usuarioId = req.usuario.id;
 
@@ -25,7 +37,7 @@ export const listarNotificaciones = atraparErrores(async (req, res) => {
   res.status(200).json(lista);
 });
 
-// POST /api/notificaciones - Envía una notificación manual (solo administrador)
+// POST /api/notificaciones -> Permite a un administrador enviar un aviso oficial (ej: solicitud de corrección)
 export const crearNotificacion = atraparErrores(async (req, res) => {
   exigirCampos(req.body, ['usuarioId', 'titulo', 'mensaje']);
 
@@ -45,7 +57,7 @@ export const crearNotificacion = atraparErrores(async (req, res) => {
   res.status(201).json(creada);
 });
 
-// PATCH /api/notificaciones/:id/leida - Marca una notificación como leída
+// PATCH /api/notificaciones/:id/leida -> Marca una notificación individual como leída
 export const marcarLeida = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const actual = await modeloNotificacion.buscarPorId(id);
@@ -59,7 +71,7 @@ export const marcarLeida = atraparErrores(async (req, res) => {
   res.status(200).json(actualizada);
 });
 
-// PATCH /api/notificaciones/leer-todas - Marca todas las notificaciones como leídas
+// PATCH /api/notificaciones/leer-todas -> Marca todas las notificaciones del usuario como leídas de una sola vez
 export const marcarTodasLeidas = atraparErrores(async (req, res) => {
   let usuarioId = req.usuario.id;
 
@@ -76,7 +88,7 @@ export const marcarTodasLeidas = atraparErrores(async (req, res) => {
   res.status(200).json({ mensaje: 'Notificaciones marcadas como leídas.', cantidadActualizada: cantidad });
 });
 
-// DELETE /api/notificaciones/:id - Elimina una notificación
+// DELETE /api/notificaciones/:id -> Elimina una notificación de la bandeja del usuario
 export const eliminarNotificacion = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const actual = await modeloNotificacion.buscarPorId(id);

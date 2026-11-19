@@ -1,3 +1,18 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/controladores/puja.controller.js
+ * ROL: Corazón de las ofertas en vivo (valida RN01, RN02, RN03 y RN04 en transacción SQL).
+ * ============================================================================
+ *
+ * ¿POR QUÉ "crearPuja" USA UNA TRANSACCIÓN SQL CON "FOR UPDATE"?
+ * Imagina que dos usuarios ofertan al mismo milisegundo sobre la misma subasta.
+ * Sin bloqueo, ambos leerían el mismo precio viejo y ambos podrían guardarse mal.
+ * Con "ejecutarTransaccion" + "buscarParaBloquear (FOR UPDATE)":
+ *   1. MySQL bloquea la fila de la subasta para la primera petición.
+ *   2. Valida RN01/RN02/RN03, inserta la puja, actualiza precio_actual y avisa al líder anterior.
+ *   3. Recién al hacer COMMIT se libera la fila para la segunda petición, que ya ve el nuevo precio.
+ */
+
 import { consultar, ejecutarTransaccion } from '../config/baseDatos.js';
 import * as modeloSubasta from '../modelos/subasta.model.js';
 import * as modeloPuja from '../modelos/puja.model.js';
@@ -5,7 +20,7 @@ import { ErrorApi, atraparErrores } from '../middlewares/errores.middleware.js';
 import { exigirCampos, exigirNumeroPositivo, leerIdPositivo } from '../middlewares/validar.middleware.js';
 import { aFechaIso } from '../utilidades/fecha.js';
 
-// GET /api/pujas - Lista pujas filtrando por subasta o postor
+// GET /api/pujas -> Lista ofertas filtrando opcionalmente por ?subastaId=... o ?postorId=...
 export const listarPujas = atraparErrores(async (req, res) => {
   const { subastaId, postorId } = req.query;
 
@@ -19,7 +34,7 @@ export const listarPujas = atraparErrores(async (req, res) => {
   res.status(200).json(pujas);
 });
 
-// GET /api/pujas/:id - Devuelve una puja por ID
+// GET /api/pujas/:id -> Devuelve una puja puntual por su ID
 export const obtenerPuja = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   const puja = await modeloPuja.buscarPorId(id);
@@ -27,7 +42,7 @@ export const obtenerPuja = atraparErrores(async (req, res) => {
   res.status(200).json(puja);
 });
 
-// POST /api/pujas - Registra una oferta nueva validando RN01, RN02, RN03 y RN04
+// POST /api/pujas -> Registra una oferta nueva validando las 4 reglas principales (RN01 a RN04)
 export const crearPuja = atraparErrores(async (req, res) => {
   exigirCampos(req.body, ['subastaId', 'monto']);
 
@@ -36,7 +51,7 @@ export const crearPuja = atraparErrores(async (req, res) => {
 
   const monto = exigirNumeroPositivo(req.body.monto, 'monto');
 
-  // RN04: El postor debe aceptar el compromiso vinculante de compra
+  // RN04: El checkbox de compromiso vinculante de compra debe venir en true
   if (req.body.compromisoAceptado !== true) {
     throw new ErrorApi(400, 'RN04: Debes aceptar el compromiso vinculante de compra.');
   }
@@ -45,27 +60,30 @@ export const crearPuja = atraparErrores(async (req, res) => {
   await modeloSubasta.cerrarSubastasVencidas();
 
   const pujaCreada = await ejecutarTransaccion(async (conexion) => {
+    // Bloquea la subasta hasta terminar toda la operación
     const subasta = await modeloSubasta.buscarParaBloquear(conexion, subastaId);
     if (!subasta) throw new ErrorApi(404, 'La subasta no existe.');
 
-    // RN02: El vendedor no puede pujar en su propia subasta
+    // RN02: Prohibición de auto-puja (el dueño del lote no puede inflar su propio precio)
     if (Number(subasta.vendedor_id) === Number(req.usuario.id)) {
       throw new ErrorApi(403, 'RN02: No puedes pujar en tu propia subasta.');
     }
 
-    // RN03: Solo se aceptan ofertas si la subasta está activa y no venció
+    // RN03: Solo se puede ofertar si la subasta está activa y no expiró su reloj
     const fechaFin = new Date(aFechaIso(subasta.fecha_fin)).getTime();
     if (subasta.estado !== 'activa' || fechaFin <= Date.now()) {
       throw new ErrorApi(409, 'RN03: La subasta ya finalizó o no está activa.');
     }
 
-    // RN01: La oferta debe superar el precio actual + incremento mínimo
+    // RN01: El monto debe ser igual o superior a precio_actual + incremento_minimo
     const minimo = Number(subasta.precio_actual) + Number(subasta.incremento_minimo);
     if (monto < minimo) {
       throw new ErrorApi(400, `RN01: La oferta mínima es $${minimo.toLocaleString('es-AR')}.`);
     }
 
+    // Guardamos quién iba ganando antes para enviarle la notificación de oferta superada
     const liderAnterior = await modeloPuja.buscarOfertaLider(conexion, subastaId);
+
     const nuevaPuja = await modeloPuja.crear(conexion, {
       subastaId,
       postorId: req.usuario.id,
@@ -73,9 +91,10 @@ export const crearPuja = atraparErrores(async (req, res) => {
       nota,
     });
 
+    // Actualizamos el precio actual de la subasta al nuevo monto ganador
     await consultar('UPDATE subastas SET precio_actual = ? WHERE id = ?', [monto, subastaId], conexion);
 
-    // Avisa al postor anterior que su oferta fue superada
+    // Si había otro postor liderando antes, le dejamos un aviso en su bandeja de notificaciones
     if (liderAnterior && Number(liderAnterior.postorId) !== Number(req.usuario.id)) {
       await consultar(
         `INSERT INTO notificaciones (usuario_id, subasta_id, titulo, mensaje, tipo) VALUES (?, ?, ?, ?, 'superada')`,
@@ -95,7 +114,7 @@ export const crearPuja = atraparErrores(async (req, res) => {
   res.status(201).json(pujaCreada);
 });
 
-// PUT /api/pujas/:id - Edita la nota de coordinación (RN04: el postor no puede cambiar el monto)
+// PUT /api/pujas/:id -> El postor solo puede editar su nota aclaratoria (RN04: el monto es irrevocable)
 export const actualizarPuja = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
 
@@ -127,7 +146,7 @@ export const actualizarPuja = atraparErrores(async (req, res) => {
   res.status(200).json(actualizada);
 });
 
-// DELETE /api/pujas/:id - Elimina una puja y recalcula precio (solo administrador)
+// DELETE /api/pujas/:id -> Solo un administrador puede anular una puja y recalcular el precio del lote
 export const eliminarPuja = atraparErrores(async (req, res) => {
   const id = leerIdPositivo(req.params.id);
   if (req.usuario.rol !== 'admin') {
